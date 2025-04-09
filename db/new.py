@@ -1,7 +1,7 @@
 import openpyxl as op
 import pandas as pd
 from fuzzywuzzy import process
-from tkinter import filedialog, messagebox, StringVar
+from tkinter import filedialog, messagebox, StringVar, simpledialog
 import collections
 import tkinter as tk
 from datetime import datetime
@@ -42,6 +42,10 @@ def select_file2():
     read_columns(file2_path, "File 2")
 def start_matching():
     try:
+        custom_filename = simpledialog.askstring("Input", "Enter the name for the result file:")
+        if not custom_filename:
+            raise ValueError("Filename cannot be empty")
+        
         file1 = op.load_workbook(file1_path)
         sheet1 = file1.active
 
@@ -74,8 +78,8 @@ def start_matching():
                 row_tracker += 1
 
         current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        result.save(f"Result.xlsx_{current_time}")
-        messagebox.showinfo("Success", f"Matching complete! Results saved as 'Result.xlsx'.")
+        result.save(f"{custom_filename}_{current_time}")
+        messagebox.showinfo("Success", f"Matching complete! Results saved as '{custom_filename}.xlsx'.")
 
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
