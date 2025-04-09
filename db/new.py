@@ -4,6 +4,7 @@ from fuzzywuzzy import process
 from tkinter import filedialog, messagebox, StringVar
 import collections
 import tkinter as tk
+from datetime import datetime
 from tkinter import ttk
 
 def drop_down_menu(columns, file_label):
@@ -72,8 +73,8 @@ def start_matching():
                 result_sheet[f'C{row_tracker + 1}'].value = res[email][0][1]
                 row_tracker += 1
 
-        
-        result.save("Result.xlsx")
+        current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        result.save(f"Result.xlsx_{current_time}")
         messagebox.showinfo("Success", f"Matching complete! Results saved as 'Result.xlsx'.")
 
     except Exception as e:
