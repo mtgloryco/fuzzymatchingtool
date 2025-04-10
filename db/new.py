@@ -79,8 +79,9 @@ def start_matching():
                 row_tracker += 1
 
         current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        result.save(f"{custom_filename}_{current_time}.xlsx")
-        messagebox.showinfo("Success", f"Matching complete! Results saved as '{custom_filename}.xlsx'.")
+        fn = f"{custom_filename}_{current_time}.xlsx"
+        result.save(fn)
+        messagebox.showinfo("Success", f"Matching complete! Results saved as '{fn}'.")
 
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
