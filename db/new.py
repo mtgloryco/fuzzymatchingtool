@@ -20,7 +20,7 @@ def drop_down_menu(columns, file_label):
     drop_down.pack()
 
 
-def read_columns(file, file_label):
+def read_columns(file, file_label, tree):
     sheet = pd.read_excel(file, "Sheet1")
     cols = sheet.columns.tolist()
     tree.config(columns=cols)
@@ -35,12 +35,12 @@ def select_file1():
     global file1_path
     file1_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
     file1_label.config(text=f"Selected: {file1_path.split('/')[-1]}")
-    read_columns(file1_path,"File 1")
+    read_columns(file1_path,"File 1", tree1)
 def select_file2():
     global file2_path
     file2_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
     file2_label.config(text=f"Selected: {file2_path.split('/')[-1]}")
-    read_columns(file2_path, "File 2")
+    read_columns(file2_path, "File 2", tree2)
 def start_matching():
     try:
         custom_filename = simpledialog.askstring("Input", "Enter the name for the result file:")
@@ -93,8 +93,54 @@ style.theme_use("default")
 
 # Change Treeview heading text color (foreground)
 style.configure("Treeview.Heading", foreground="red", font=('Helvetica', 10, 'bold'))
-tree = ttk.Treeview(root)
-tree.pack()
+
+frame1 = ttk.LabelFrame(root, text="First Excell File")
+frame1.pack(padx=5, pady=5, fill="both", expand=True)
+
+frame2 = ttk.LabelFrame(root, text="Second Excell File")
+frame2.pack(padx=5, pady=5, fill="both", expand=True)
+
+
+#Iyi ni scroll frame
+
+tree1_frame = ttk.Frame(frame1)
+tree1_frame.pack(fill="both", expand=True)
+tree2_frame = ttk.Frame(frame2)
+tree2_frame.pack(fill="both", expand=True)
+
+#scroll for frame one for vertical axis
+
+tree1_scroll_y = ttk.Scrollbar(tree1_frame)
+tree1_scroll_y.pack(side="right", expand=True)
+
+tree2_scroll_y = ttk.Scrollbar(tree2_frame)
+tree2_scroll_y.pack(side="right", fill="y")
+
+# Create tree1 Treeview widget
+tree1 = ttk.Treeview(tree1_frame, yscrollcommand=tree1_scroll_y.set)
+tree1.pack(fill="both", expand=True)
+tree1_scroll_y.config(command=tree1.yview)
+
+#scroll for horizontal axis
+tree1_scroll_x = ttk.Scrollbar(tree1_frame, orient="horizontal", command=tree1.xview)
+tree1_scroll_x.pack(side="bottom", fill="x")
+tree1.config(xscrollcommand=tree1_scroll_x.set)
+
+tree2_scroll_x = ttk.Scrollbar(tree2_frame, orient="horizontal")
+tree1_scroll_x.pack(side="bottom", fill="x")
+# scroling for tree 2
+
+tree2 = ttk.Treeview(tree2_frame, yscrollcommand=tree2_scroll_y.set, xscrollcommand=tree2_scroll_x.set)
+tree2.pack(fill="both", expand=True)
+tree2_scroll_y.config(command=tree2.yview)
+tree2_scroll_x.config(command=tree2.xview)
+
+#code to create styling of the created frames
+styling = ttk.Style()
+styling.theme_use("default")
+styling.configure("Treeview.Heading", foreground="red", font=("Verdana", 10, "bold"))
+
+
 file1_label = tk.Label(root, text="Select first Excel file", width=50)
 file1_label.pack(pady=5)
 file1_btn = tk.Button(root, text="Choose File 1", command=select_file1)
