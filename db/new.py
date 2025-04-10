@@ -1,6 +1,6 @@
 import openpyxl as op
 import pandas as pd
-from fuzzywuzzy import process
+from rapidfuzz import process
 from tkinter import filedialog, messagebox, StringVar, simpledialog
 import collections
 import tkinter as tk
@@ -27,8 +27,9 @@ def read_columns(file, file_label):
     drop_down_menu(cols, file_label)
     for col in cols:
         tree.heading(col, text=col)
-        tree.column(col, anchor='center')
-
+        tree.column(col, width=100)
+    for _, row in sheet.iterrows():
+        tree.insert("", "end", values=list(row))
 
 def select_file1():
     global file1_path
@@ -78,7 +79,7 @@ def start_matching():
                 row_tracker += 1
 
         current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        result.save(f"{custom_filename}_{current_time}")
+        result.save(f"{custom_filename}_{current_time}.xlsx")
         messagebox.showinfo("Success", f"Matching complete! Results saved as '{custom_filename}.xlsx'.")
 
     except Exception as e:
