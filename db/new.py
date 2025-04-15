@@ -69,8 +69,8 @@ def start_matching():
         email2 = [r[index_of_item] for r in sheet2.iter_rows(values_only=True) if r[index_of_item]]
 
        
-        result_sheet['A1'].value = "Email1"
-        result_sheet['B1'].value = "Matched Email"
+        result_sheet['A1'].value = f"{selected_col.get()} from first file "
+        result_sheet['B1'].value = f"{selected_col.get()} from second file"
         result_sheet['C1'].value = "Match Score"
 
         res = collections.defaultdict(list)
@@ -135,7 +135,7 @@ def _on_shift_mousewheel(event):
 canva.bind_all("<MouseWheel>", _on_mousewheel)
 canva.bind_all("<Shift-MouseWheel>", _on_shift_mousewheel)
 
-# Add these bindings for better scrolling experience
+
 root.bind('<Up>', lambda event: canva.yview_scroll(-1, "units"))
 root.bind('<Down>', lambda event: canva.yview_scroll(1, "units"))
 root.bind('<Left>', lambda event: canva.xview_scroll(-1, "units"))
