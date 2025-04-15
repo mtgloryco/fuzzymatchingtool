@@ -39,43 +39,44 @@ def update_sheet_dropdown(file_path, is_file1=True):
         messagebox.showerror("Error", f"Could not read sheets: {e}")
 
 def drop_down_menu(columns, file_label):
-    global options, dropdown1, dropdown2
+    global options, dropdown1, dropdown2, selected_col1, selected_col2
     options = [col for col in columns]
     
     if file_label == "File 1":
+        # Initialize selected_col1 as a global variable
         global selected_col1
-        selected_col1 = StringVar()
+        if not 'selected_col1' in globals():
+            selected_col1 = StringVar(root)
         selected_col1.set(options[0] if options else "")
         
+        # Store selected_col1 as an attribute of root
+        root.selected_col1 = selected_col1
+        
         # Clear the existing dropdown
-        if 'dropdown1' in globals():
+        if 'dropdown1' in globals() and dropdown1 is not None:
             dropdown1.destroy()
             
-        
+        # Create new dropdown
         dropdown1 = tk.OptionMenu(control_frame, selected_col1, *options)
         dropdown1.grid(row=4, column=1, pady=5, padx=5, sticky="ew")
         
-        # Remove placeholder if it exists
-        if 'dropdown_placeholder1' in globals() and dropdown_placeholder1.winfo_exists():
-            dropdown_placeholder1.destroy()
     else:
-        # For File 2, we're using a different variable
+        # Initialize selected_col2 as a global variable
         global selected_col2
-        selected_col2 = StringVar()
+        if not 'selected_col2' in globals():
+            selected_col2 = StringVar(root)
         selected_col2.set(options[0] if options else "")
         
+        # Store selected_col2 as an attribute of root
+        root.selected_col2 = selected_col2
+        
         # Clear the existing dropdown
-        if 'dropdown2' in globals():
+        if 'dropdown2' in globals() and dropdown2 is not None:
             dropdown2.destroy()
             
         # Create new dropdown
-        
         dropdown2 = tk.OptionMenu(control_frame, selected_col2, *options)
         dropdown2.grid(row=5, column=1, pady=5, padx=5, sticky="ew")
-        
-        # Remove placeholder if it exists
-        if 'dropdown_placeholder2' in globals() and dropdown_placeholder2.winfo_exists():
-            dropdown_placeholder2.destroy()
 
 def load_sheet_data(file_path, sheet_name, tree, file_label):
     """Load data from specified sheet into the treeview."""
@@ -107,7 +108,6 @@ def on_sheet1_selected(*args):
         # Load and display the selected sheet
         load_sheet_data(root.file1_path, selected_sheet1.get(), tree1, "File 1")
         
-        # Open the workbook and set the active sheet to the selected one
         try:
             # Open the workbook for reading and writing
             workbook = op.load_workbook(root.file1_path)
@@ -167,13 +167,23 @@ def select_file2():
     
 def start_matching():
     try:
+        # Check if files are selected
         if not hasattr(root, 'file1_path') or not hasattr(root, 'file2_path'):
             raise ValueError("Please select both Excel files first")
+        
+        # Check if columns are selected
+        if not hasattr(root, 'selected_col1') or not hasattr(root, 'selected_col2'):
+            raise ValueError("Please select columns for matching from both files")
             
+        # Check if selected columns have values
+        if not selected_col1.get() or not selected_col2.get():
+            raise ValueError("Please select columns for matching from both files")
+            
+        # Get filename from user
         custom_filename = simpledialog.askstring("Input", "Enter the name for the result file:")
         if not custom_filename:
             raise ValueError("Filename cannot be empty")
-        
+            
         # Load workbooks with selected sheets
         file1 = op.load_workbook(root.file1_path)
         sheet1 = file1[selected_sheet1.get()]
@@ -222,7 +232,7 @@ def start_matching():
                 if value:
                     res[value] = process.extract(value, values_to_match, limit=1)
                     result_sheet[f'A{row_tracker + 1}'].value = value
-                    if res[value]:  # Check if we got any matches
+                    if res[value]:
                         result_sheet[f'B{row_tracker + 1}'].value = res[value][0][0]
                         result_sheet[f'C{row_tracker + 1}'].value = res[value][0][1]
                     row_tracker += 1
@@ -272,12 +282,12 @@ files_canvas.configure(
     xscrollcommand=files_scrollbar_x.set
 )
 
-# Pack the scrollbars and canvas
+
 files_scrollbar_y.pack(side="right", fill="y")
 files_scrollbar_x.pack(side="bottom", fill="x")
 files_canvas.pack(side="left", fill="both", expand=True)
 
-# Add mouse wheel support for vertical scrolling
+
 def _on_mousewheel(event):
     files_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
@@ -347,8 +357,6 @@ tree2["show"] = "headings"
 tree2_scroll_y.config(command=tree2.yview)
 tree2_scroll_x.config(command=tree2.xview)
 
-# Set up the control frame to match the image layout
-# Configure grid columns to expand evenly
 control_frame.grid_columnconfigure(0, weight=1)
 control_frame.grid_columnconfigure(1, weight=1)
 
@@ -377,7 +385,6 @@ sheet1_dropdown = tk.OptionMenu(control_frame, selected_sheet1, "Sheet1")
 sheet1_dropdown.grid(row=3, column=1, pady=5, padx=5, sticky="ew")
 selected_sheet1.trace('w', on_sheet1_selected)  # Call function when selection changes
 
-# Sheet selection for File 2
 sheet2_label = tk.Label(control_frame, text="Sheet for File 2:")
 sheet2_label.grid(row=6, column=0, sticky="w", pady=5, padx=5)
 selected_sheet2 = StringVar(root)
@@ -386,19 +393,17 @@ sheet2_dropdown = tk.OptionMenu(control_frame, selected_sheet2, "Sheet1")
 sheet2_dropdown.grid(row=6, column=1, pady=5, padx=5, sticky="ew")
 selected_sheet2.trace('w', on_sheet2_selected)  # Call function when selection changes
 
-# Column selection for File 1
 label_col_file1 = tk.Label(control_frame, text="Columns for File 1")
 label_col_file1.grid(row=4, column=0, sticky="w", pady=5, padx=5)
 dropdown_placeholder1 = tk.Label(control_frame, text="Email", relief="raised", width=15)
 dropdown_placeholder1.grid(row=4, column=1, pady=5, padx=5, sticky="ew")
 
-# Column selection for File 2
+
 label_col_file2 = tk.Label(control_frame, text="Columns for File 2")
 label_col_file2.grid(row=5, column=0, sticky="w", pady=5, padx=5)
 dropdown_placeholder2 = tk.Label(control_frame, text="Email", relief="raised", width=15)
 dropdown_placeholder2.grid(row=5, column=1, pady=5, padx=5, sticky="ew")
 
-# Start matching button - full width with green background
 match_btn = tk.Button(control_frame, text="Start Matching", command=start_matching, bg="green", fg="white", height=2)
 match_btn.grid(row=7, column=0, columnspan=2, pady=10, padx=5, sticky="ew")
 
