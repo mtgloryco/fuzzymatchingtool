@@ -7,98 +7,225 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import ttk
 
+def get_sheet_names(file_path):
+    """Get all sheet names from an Excel file."""
+    workbook = op.load_workbook(file_path, read_only=True)
+    return workbook.sheetnames
+
+def update_sheet_dropdown(file_path, is_file1=True):
+    """Update the sheet dropdown with sheet names from the selected file."""
+    try:
+        sheet_names = get_sheet_names(file_path)
+        
+        if is_file1:
+            # Clear existing dropdown
+            sheet1_dropdown['menu'].delete(0, 'end')
+            # Reset the selected sheet variable
+            selected_sheet1.set(sheet_names[0])
+            # Add new options
+            for sheet in sheet_names:
+                sheet1_dropdown['menu'].add_command(label=sheet, 
+                                                   command=lambda s=sheet: selected_sheet1.set(s))
+        else:
+            # Clear existing dropdown
+            sheet2_dropdown['menu'].delete(0, 'end')
+            # Reset the selected sheet variable
+            selected_sheet2.set(sheet_names[0])
+            # Add new options
+            for sheet in sheet_names:
+                sheet2_dropdown['menu'].add_command(label=sheet, 
+                                                   command=lambda s=sheet: selected_sheet2.set(s))
+    except Exception as e:
+        messagebox.showerror("Error", f"Could not read sheets: {e}")
+
 def drop_down_menu(columns, file_label):
-    global options
+    global options, dropdown1, dropdown2
     options = [col for col in columns]
-    global selected_col
-    selected_col = StringVar()
-    selected_col.set(options[0])
     
     if file_label == "File 1":
-        drop_down = tk.OptionMenu(control_frame, selected_col, *options)
-        drop_down_label = tk.Label(control_frame, text=f"Columns for File 1")
-        drop_down_label.grid(row=4, column=0, sticky="w", pady=5, padx=5)
-        drop_down.grid(row=4, column=1, pady=5, padx=5, sticky="ew")
+        global selected_col1
+        selected_col1 = StringVar()
+        selected_col1.set(options[0] if options else "")
+        
+        # Clear the existing dropdown
+        if 'dropdown1' in globals():
+            dropdown1.destroy()
+            
+        
+        dropdown1 = tk.OptionMenu(control_frame, selected_col1, *options)
+        dropdown1.grid(row=4, column=1, pady=5, padx=5, sticky="ew")
+        
+        # Remove placeholder if it exists
+        if 'dropdown_placeholder1' in globals() and dropdown_placeholder1.winfo_exists():
+            dropdown_placeholder1.destroy()
     else:
         # For File 2, we're using a different variable
         global selected_col2
         selected_col2 = StringVar()
-        selected_col2.set(options[0])
-        drop_down = tk.OptionMenu(control_frame, selected_col2, *options)
-        drop_down_label = tk.Label(control_frame, text=f"Columns for File 2")
-        drop_down_label.grid(row=5, column=0, sticky="w", pady=5, padx=5)
-        drop_down.grid(row=5, column=1, pady=5, padx=5, sticky="ew")
+        selected_col2.set(options[0] if options else "")
+        
+        # Clear the existing dropdown
+        if 'dropdown2' in globals():
+            dropdown2.destroy()
+            
+        # Create new dropdown
+        
+        dropdown2 = tk.OptionMenu(control_frame, selected_col2, *options)
+        dropdown2.grid(row=5, column=1, pady=5, padx=5, sticky="ew")
+        
+        # Remove placeholder if it exists
+        if 'dropdown_placeholder2' in globals() and dropdown_placeholder2.winfo_exists():
+            dropdown_placeholder2.destroy()
 
-def read_columns(file, file_label, tree):
-    sheet = pd.read_excel(file, "Sheet1")
-    cols = sheet.columns.tolist()
-    tree.config(columns=cols)
-    drop_down_menu(cols, file_label)
-    for item in tree.get_children():
-        tree.delete(item)
-    for col in cols:
-        tree.heading(col, text=col)
-        tree.column(col, width=100, minwidth=100)
-    for _, row in sheet.iterrows():
-        tree.insert("", "end", values=list(row))
+def load_sheet_data(file_path, sheet_name, tree, file_label):
+    """Load data from specified sheet into the treeview."""
+    try:
+        sheet = pd.read_excel(file_path, sheet_name)
+        cols = sheet.columns.tolist()
+        tree.config(columns=cols)
+        drop_down_menu(cols, file_label)
+        
+        # Clear the tree
+        for item in tree.get_children():
+            tree.delete(item)
+            
+        # Set headers
+        for col in cols:
+            tree.heading(col, text=col)
+            tree.column(col, width=100, minwidth=100)
+            
+        # Add data
+        for _, row in sheet.iterrows():
+            tree.insert("", "end", values=list(row))
+            
+    except Exception as e:
+        messagebox.showerror("Error", f"Could not load sheet data: {e}")
+
+def on_sheet1_selected(*args):
+    """Called when a sheet is selected for file 1."""
+    if hasattr(root, 'file1_path') and root.file1_path:
+        # Load and display the selected sheet
+        load_sheet_data(root.file1_path, selected_sheet1.get(), tree1, "File 1")
+        
+        # Open the workbook and set the active sheet to the selected one
+        try:
+            # Open the workbook for reading and writing
+            workbook = op.load_workbook(root.file1_path)
+            # Set the active sheet
+            workbook.active = workbook[selected_sheet1.get()]
+            # Save the workbook with the new active sheet
+            workbook.save(root.file1_path)
+        except Exception as e:
+            # Don't show error to user as this is an enhancement, not critical functionality
+            print(f"Could not set active sheet in file: {e}")
+
+def on_sheet2_selected(*args):
+    """Called when a sheet is selected for file 2."""
+    if hasattr(root, 'file2_path') and root.file2_path:
+        # Load and display the selected sheet
+        load_sheet_data(root.file2_path, selected_sheet2.get(), tree2, "File 2")
+        
+        # Open the workbook and set the active sheet to the selected one
+        try:
+            # Open the workbook for reading and writing
+            workbook = op.load_workbook(root.file2_path)
+            # Set the active sheet
+            workbook.active = workbook[selected_sheet2.get()]
+            # Save the workbook with the new active sheet
+            workbook.save(root.file2_path)
+        except Exception as e:
+            # Don't show error to user as this is an enhancement, not critical functionality
+            print(f"Could not set active sheet in file: {e}")
 
 def select_file1():
-    global file1_path
-    file1_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
-    if file1_path:
-        filename = file1_path.split('/')[-1]
+    file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
+    if file_path:
+        root.file1_path = file_path
+        filename = file_path.split('/')[-1]
         file1_label.config(text=f"Selected: {filename}")
-        read_columns(file1_path, "File 1", tree1)
+        
+        # Update sheet dropdown
+        update_sheet_dropdown(file_path, is_file1=True)
+        
+        # Load the first sheet data
+        if hasattr(root, 'selected_sheet1'):
+            load_sheet_data(file_path, selected_sheet1.get(), tree1, "File 1")
     
 def select_file2():
-    global file2_path
-    file2_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
-    if file2_path:
-        filename = file2_path.split('/')[-1]
+    file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
+    if file_path:
+        root.file2_path = file_path
+        filename = file_path.split('/')[-1]
         file2_label.config(text=f"Selected: {filename}")
-        read_columns(file2_path, "File 2", tree2)
+        
+        # Update sheet dropdown
+        update_sheet_dropdown(file_path, is_file1=False)
+        
+        # Load the first sheet data
+        if hasattr(root, 'selected_sheet2'):
+            load_sheet_data(file_path, selected_sheet2.get(), tree2, "File 2")
     
 def start_matching():
     try:
+        if not hasattr(root, 'file1_path') or not hasattr(root, 'file2_path'):
+            raise ValueError("Please select both Excel files first")
+            
         custom_filename = simpledialog.askstring("Input", "Enter the name for the result file:")
         if not custom_filename:
             raise ValueError("Filename cannot be empty")
         
-        file1 = op.load_workbook(file1_path)
-        sheet1 = file1.active
+        # Load workbooks with selected sheets
+        file1 = op.load_workbook(root.file1_path)
+        sheet1 = file1[selected_sheet1.get()]
 
-        file2 = op.load_workbook(file2_path)
-        sheet2 = file2.active  
+        file2 = op.load_workbook(root.file2_path)
+        sheet2 = file2[selected_sheet2.get()]
 
         result = op.Workbook()
         result_sheet = result.active
         result_sheet.title = "Result"
         
-        # Use the appropriate selected column variable for each file
-        col1 = selected_col.get()
-        col2 = selected_col2.get() if 'selected_col2' in globals() else selected_col.get()
-        
-        if col1 not in options:
-            raise ValueError("Selected column for File 1 is not valid.")
+        # Use the appropriate selected column variables for each file
+        if not hasattr(root, 'selected_col1') or not hasattr(root, 'selected_col2'):
+            raise ValueError("Please select columns for matching")
             
-        index_of_item = options.index(col1)
+        col1 = selected_col1.get()
+        col2 = selected_col2.get()
+        
+        # Get column indices
+        df1 = pd.read_excel(root.file1_path, selected_sheet1.get())
+        df2 = pd.read_excel(root.file2_path, selected_sheet2.get())
+        
+        if col1 not in df1.columns:
+            raise ValueError(f"Column '{col1}' not found in File 1")
+        if col2 not in df2.columns:
+            raise ValueError(f"Column '{col2}' not found in File 2")
+            
+        col1_index = df1.columns.get_loc(col1)
+        col2_index = df2.columns.get_loc(col2)
+        
         row_tracker = 1
-        email2 = [r[index_of_item] for r in sheet2.iter_rows(values_only=True) if r[index_of_item]]
+        values_to_match = [r[col2_index] for r in sheet2.iter_rows(values_only=True) if r[col2_index]]
 
-        result_sheet['A1'].value = "Email1"
-        result_sheet['B1'].value = "Matched Email"
+        # Set up result headers
+        result_sheet['A1'].value = col1
+        result_sheet['B1'].value = f"Matched {col2}"
         result_sheet['C1'].value = "Match Score"
 
         res = collections.defaultdict(list)
 
-        for t in sheet1.iter_rows(values_only=True):
-            email = t[index_of_item]
-            if email:
-                res[email] = process.extract(email, email2, limit=1)
-                result_sheet[f'A{row_tracker + 1}'].value = email
-                result_sheet[f'B{row_tracker + 1}'].value = res[email][0][0]
-                result_sheet[f'C{row_tracker + 1}'].value = res[email][0][1]
-                row_tracker += 1
+        # Skip header row
+        rows = list(sheet1.iter_rows(values_only=True))
+        if rows:  # Skip header
+            for t in rows[1:]:
+                value = t[col1_index]
+                if value:
+                    res[value] = process.extract(value, values_to_match, limit=1)
+                    result_sheet[f'A{row_tracker + 1}'].value = value
+                    if res[value]:  # Check if we got any matches
+                        result_sheet[f'B{row_tracker + 1}'].value = res[value][0][0]
+                        result_sheet[f'C{row_tracker + 1}'].value = res[value][0][1]
+                    row_tracker += 1
 
         current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         result.save(f"{custom_filename}_{current_time}.xlsx")
@@ -121,7 +248,7 @@ files_frame = ttk.LabelFrame(main_horizontal_frame, text="Excel Files")
 files_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
 
 # Create controls frame on the right with fixed width
-control_frame = ttk.LabelFrame(main_horizontal_frame, text="Controls", width=250)
+control_frame = ttk.LabelFrame(main_horizontal_frame, text="Controls", width=280)
 control_frame.pack(side="right", fill="y", padx=5, pady=5)
 control_frame.pack_propagate(False)  # Prevent the frame from shrinking
 
@@ -241,12 +368,31 @@ file2_label.grid(row=2, column=0, pady=5, padx=5, sticky="ew")
 file2_btn = tk.Button(control_frame, text="Choose File 2", command=select_file2, height=2)
 file2_btn.grid(row=2, column=1, pady=5, padx=5, sticky="ew")
 
-# Add dropdown placeholders (these will be replaced when files are loaded)
+# Sheet selection for File 1
+sheet1_label = tk.Label(control_frame, text="Sheet for File 1:")
+sheet1_label.grid(row=3, column=0, sticky="w", pady=5, padx=5)
+selected_sheet1 = StringVar(root)
+selected_sheet1.set("Sheet1")  # Default value
+sheet1_dropdown = tk.OptionMenu(control_frame, selected_sheet1, "Sheet1")
+sheet1_dropdown.grid(row=3, column=1, pady=5, padx=5, sticky="ew")
+selected_sheet1.trace('w', on_sheet1_selected)  # Call function when selection changes
+
+# Sheet selection for File 2
+sheet2_label = tk.Label(control_frame, text="Sheet for File 2:")
+sheet2_label.grid(row=6, column=0, sticky="w", pady=5, padx=5)
+selected_sheet2 = StringVar(root)
+selected_sheet2.set("Sheet1")  # Default value
+sheet2_dropdown = tk.OptionMenu(control_frame, selected_sheet2, "Sheet1")
+sheet2_dropdown.grid(row=6, column=1, pady=5, padx=5, sticky="ew")
+selected_sheet2.trace('w', on_sheet2_selected)  # Call function when selection changes
+
+# Column selection for File 1
 label_col_file1 = tk.Label(control_frame, text="Columns for File 1")
 label_col_file1.grid(row=4, column=0, sticky="w", pady=5, padx=5)
 dropdown_placeholder1 = tk.Label(control_frame, text="Email", relief="raised", width=15)
 dropdown_placeholder1.grid(row=4, column=1, pady=5, padx=5, sticky="ew")
 
+# Column selection for File 2
 label_col_file2 = tk.Label(control_frame, text="Columns for File 2")
 label_col_file2.grid(row=5, column=0, sticky="w", pady=5, padx=5)
 dropdown_placeholder2 = tk.Label(control_frame, text="Email", relief="raised", width=15)
@@ -254,6 +400,6 @@ dropdown_placeholder2.grid(row=5, column=1, pady=5, padx=5, sticky="ew")
 
 # Start matching button - full width with green background
 match_btn = tk.Button(control_frame, text="Start Matching", command=start_matching, bg="green", fg="white", height=2)
-match_btn.grid(row=6, column=0, columnspan=2, pady=10, padx=5, sticky="ew")
+match_btn.grid(row=7, column=0, columnspan=2, pady=10, padx=5, sticky="ew")
 
 root.mainloop()
