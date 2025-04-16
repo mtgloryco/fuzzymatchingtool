@@ -150,31 +150,107 @@ def select_file2():
         if hasattr(root, 'selected_sheet2'):
             load_sheet_data(file_path, selected_sheet2.get(), tree2, "File 2")
 
+def highlight_column(tree, column_index):
+    """Highlight only the selected column in the Treeview."""
+    # Reset all cell styles
+    for item in tree.get_children():
+        tree.item(item, tags=())
+    
+    # Create a tag for this specific column
+    tag_name = f"col_{column_index}"
+    
+    # Configure the tag style
+    tree.tag_configure(tag_name, background="light gray")
+    
+    # Apply the tag to each cell in the column
+    for item in tree.get_children():
+        # Get all values for this row
+        values = tree.item(item, "values")
+        if values and len(values) > column_index:
+            # Create a new item with the tag applied only to the selected column
+            tree.item(item, tags=(tag_name,))
+
 def on_column_click(event):
+    """Handle column click for File 1."""
     column_id = event.widget.identify_column(event.x)
     if column_id:  # Check if a valid column was clicked
         try:
             column_index = int(column_id.strip('#')) - 1
             if column_index >= 0:  # Ensure valid column index
-                column_name = event.widget.heading(column_index)['text']
+                column_name = tree1.heading(column_id)['text']
                 if column_name:  # Ensure column name exists
                     selected_col1.set(column_name)
                     status_label.config(text=f"File 1 column selected: {column_name}")
+                    
+                    # Add custom rendering for the column cells
+                    for col_id in tree1["columns"]:
+                        col_idx = tree1["columns"].index(col_id)
+                        tree1.tag_configure(f"col_{col_idx}", background="white")
+                    
+                    tree1.tag_configure(f"col_{column_index}", background="light gray")
+                    
+                    # Apply tags to all rows
+                    for item_id in tree1.get_children():
+                        tree1.item(item_id, tags=(f"col_{column_index}",))
+                    
+                    # Apply styling to the individual cells
+                    style_column_cells(tree1, column_index)
         except Exception as e:
             print(f"Error in column selection: {e}")
 
 def on_column_click_2(event):
+    """Handle column click for File 2."""
     column_id = event.widget.identify_column(event.x)
     if column_id:  # Check if a valid column was clicked
         try:
             column_index = int(column_id.strip('#')) - 1
             if column_index >= 0:  # Ensure valid column index
-                column_name = event.widget.heading(column_index)['text']
+                column_name = tree2.heading(column_id)['text']
                 if column_name:  # Ensure column name exists
                     selected_col2.set(column_name)
                     status_label.config(text=f"File 2 column selected: {column_name}")
+                    
+                    # Add custom rendering for the column cells
+                    for col_id in tree2["columns"]:
+                        col_idx = tree2["columns"].index(col_id)
+                        tree2.tag_configure(f"col_{col_idx}", background="white")
+                    
+                    tree2.tag_configure(f"col_{column_index}", background="light gray")
+                    
+                    # Apply tags to all rows
+                    for item_id in tree2.get_children():
+                        tree2.item(item_id, tags=(f"col_{column_index}",))
+                    
+                    # Apply styling to the individual cells
+                    style_column_cells(tree2, column_index)
         except Exception as e:
             print(f"Error in column selection: {e}")
+
+def style_column_cells(tree, column_index):
+    """Style individual cells in the selected column."""
+    # This function will be used for custom styling of individual cells
+    # Since tkinter treeview doesn't support individual cell styling directly,
+    # we use a workaround with item tags and rendering
+    
+    # First, clear existing column styling
+    for i in range(len(tree["columns"])):
+        tag_name = f"col_{i}"
+        tree.tag_configure(tag_name, background="white")
+    
+    # Set the style for the selected column
+    tag_name = f"col_{column_index}"
+    tree.tag_configure(tag_name, background="light gray")
+    
+    # Create a custom display column that shows the selection
+    def fixed_map(option):
+        # Fix for setting text colour for Tkinter ttk Treeview
+        return [elm for elm in style.map("Treeview", query_opt=option)
+                if elm[:2] != ("!disabled", "!selected")]
+    
+    style = ttk.Style()
+    style.map("Treeview", 
+              foreground=fixed_map("foreground"),
+              background=fixed_map("background"))
 
 def start_matching():
     try:
@@ -519,7 +595,7 @@ threshold_spinbox = ttk.Spinbox(
 threshold_spinbox.pack(side="right", padx=5, pady=5)
 
 # Match button
-match_btn = round_button(control_frame, radius=25, fill="#7b6cd9", font=("Poppins", 9, "bold"), width=170, text="Start matching", command=start_matching)
+match_btn = round_button(control_frame, radius=25, fill="green", font=("Poppins", 9, "bold"), width=170, text="Start matching", command=start_matching)
 match_btn.grid(row=9, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
 
 # Add a status label
