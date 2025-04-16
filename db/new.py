@@ -2,10 +2,11 @@ import openpyxl as op
 import pandas as pd
 from rapidfuzz import process
 from tkinter import filedialog, messagebox, StringVar, simpledialog
-import collections
 import tkinter as tk
 from datetime import datetime
 from tkinter import ttk
+import openpyxl.styles
+import collections
 import ctypes
 from rounded_button import round_button
 
@@ -23,20 +24,20 @@ def update_sheet_dropdown(file_path, is_file1=True):
         sheet_names = get_sheet_names(file_path)
         
         if is_file1:
-            # Clear existing dropdown
+            
             sheet1_dropdown['menu'].delete(0, 'end')
-            # Reset the selected sheet variable
+            
             selected_sheet1.set(sheet_names[0])
-            # Add new options
+            
             for sheet in sheet_names:
                 sheet1_dropdown['menu'].add_command(label=sheet, 
                                                    command=lambda s=sheet: selected_sheet1.set(s))
         else:
-            # Clear existing dropdown
+            
             sheet2_dropdown['menu'].delete(0, 'end')
-            # Reset the selected sheet variable
+            
             selected_sheet2.set(sheet_names[0])
-            # Add new options
+            
             for sheet in sheet_names:
                 sheet2_dropdown['menu'].add_command(label=sheet, 
                                                    command=lambda s=sheet: selected_sheet2.set(s))
@@ -44,43 +45,33 @@ def update_sheet_dropdown(file_path, is_file1=True):
         messagebox.showerror("Error", f"Could not read sheets: {e}")
 
 def drop_down_menu(columns, file_label):
-    global options, dropdown1, dropdown2
-    options = [col for col in columns]
-    
+    global dropdown1, dropdown2, selected_col1, selected_col2
+
+    if 'selected_col1' not in globals():
+        selected_col1 = StringVar(root)
+    if 'selected_col2' not in globals():
+        selected_col2 = StringVar(root)
+
+    # Normalize column names
+    options = [col.strip() for col in columns]
+
     if file_label == "File 1":
-        global selected_col1
-        selected_col1 = StringVar()
-        selected_col1.set(options[0] if options else "")
-        
-        # Clear the existing dropdown
-        if 'dropdown1' in globals():
+        selected_col1.set(options[0] if options else "")  # Set the first column as default
+
+        if 'dropdown1' in globals() and dropdown1 is not None:
             dropdown1.destroy()
-            
-        
+
         dropdown1 = tk.OptionMenu(control_frame, selected_col1, *options)
-        dropdown1.grid(row=4, column=1, pady=5, padx=5, sticky="ew")
-        
-        # Remove placeholder if it exists
-        if 'dropdown_placeholder1' in globals() and dropdown_placeholder1.winfo_exists():
-            dropdown_placeholder1.destroy()
+        dropdown1.grid(row=6, column=1, pady=5, padx=5, sticky="ew")
+
     else:
-        # For File 2, we're using a different variable
-        global selected_col2
-        selected_col2 = StringVar()
-        selected_col2.set(options[0] if options else "")
-        
-        # Clear the existing dropdown
-        if 'dropdown2' in globals():
+        selected_col2.set(options[0] if options else "")  # Set the first column as default
+
+        if 'dropdown2' in globals() and dropdown2 is not None:
             dropdown2.destroy()
-            
-        # Create new dropdown
-        
+
         dropdown2 = tk.OptionMenu(control_frame, selected_col2, *options)
-        dropdown2.grid(row=5, column=1, pady=5, padx=5, sticky="ew")
-        
-        # Remove placeholder if it exists
-        if 'dropdown_placeholder2' in globals() and dropdown_placeholder2.winfo_exists():
-            dropdown_placeholder2.destroy()
+        dropdown2.grid(row=7, column=1, pady=5, padx=5, sticky="ew")
 
 def load_sheet_data(file_path, sheet_name, tree, file_label):
     """Load data from specified sheet into the treeview."""
@@ -88,58 +79,54 @@ def load_sheet_data(file_path, sheet_name, tree, file_label):
         sheet = pd.read_excel(file_path, sheet_name)
         cols = sheet.columns.tolist()
         tree.config(columns=cols)
-        drop_down_menu(cols, file_label)
-        
-        # Clear the tree
+        drop_down_menu(cols, file_label)  # Update the dropdown menu with columns
+
         for item in tree.get_children():
             tree.delete(item)
-            
-        # Set headers
+
         for col in cols:
             tree.heading(col, text=col)
             tree.column(col, width=100, minwidth=100)
-            
-        # Add data
+
         for _, row in sheet.iterrows():
             tree.insert("", "end", values=list(row))
-            
+
     except Exception as e:
         messagebox.showerror("Error", f"Could not load sheet data: {e}")
 
 def on_sheet1_selected(*args):
     """Called when a sheet is selected for file 1."""
     if hasattr(root, 'file1_path') and root.file1_path:
-        # Load and display the selected sheet
+        
         load_sheet_data(root.file1_path, selected_sheet1.get(), tree1, "File 1")
         
-        # Open the workbook and set the active sheet to the selected one
         try:
-            # Open the workbook for reading and writing
+            
             workbook = op.load_workbook(root.file1_path)
-            # Set the active sheet
+            
             workbook.active = workbook[selected_sheet1.get()]
-            # Save the workbook with the new active sheet
+            
             workbook.save(root.file1_path)
         except Exception as e:
-            # Don't show error to user as this is an enhancement, not critical functionality
+            
             print(f"Could not set active sheet in file: {e}")
 
 def on_sheet2_selected(*args):
     """Called when a sheet is selected for file 2."""
     if hasattr(root, 'file2_path') and root.file2_path:
-        # Load and display the selected sheet
+        
         load_sheet_data(root.file2_path, selected_sheet2.get(), tree2, "File 2")
         
-        # Open the workbook and set the active sheet to the selected one
+        
         try:
-            # Open the workbook for reading and writing
+            
             workbook = op.load_workbook(root.file2_path)
-            # Set the active sheet
+            
             workbook.active = workbook[selected_sheet2.get()]
-            # Save the workbook with the new active sheet
+            
             workbook.save(root.file2_path)
         except Exception as e:
-            # Don't show error to user as this is an enhancement, not critical functionality
+            
             print(f"Could not set active sheet in file: {e}")
 
 def select_file1():
@@ -173,31 +160,49 @@ def select_file2():
     
 def start_matching():
     try:
+        # Validation checks
         if not hasattr(root, 'file1_path') or not hasattr(root, 'file2_path'):
             raise ValueError("Please select both Excel files first")
-            
+
+        if not selected_col1.get() or not selected_col2.get():
+            raise ValueError("Please select columns for matching from both files")
+
+        # Load data to validate selected columns
+        df1 = pd.read_excel(root.file1_path, selected_sheet1.get())
+        df2 = pd.read_excel(root.file2_path, selected_sheet2.get())
+
+        # Normalize column names
+        df1.columns = df1.columns.str.strip().str.lower()
+        df2.columns = df2.columns.str.strip().str.lower()
+
+        col1 = selected_col1.get().strip().lower()
+        col2 = selected_col2.get().strip().lower()
+
+        if col1 not in df1.columns:
+            raise ValueError(f"Selected column '{selected_col1.get()}' is not valid for File 1")
+        if col2 not in df2.columns:
+            raise ValueError(f"Selected column '{selected_col2.get()}' is not valid for File 2")
+
+        # Get filename from user
         custom_filename = simpledialog.askstring("Input", "Enter the name for the result file:")
         if not custom_filename:
             raise ValueError("Filename cannot be empty")
-        
-        # Load workbooks with selected sheets
-        file1 = op.load_workbook(root.file1_path)
-        sheet1 = file1[selected_sheet1.get()]
-
-        file2 = op.load_workbook(root.file2_path)
-        sheet2 = file2[selected_sheet2.get()]
-
-        result = op.Workbook()
-        result_sheet = result.active
-        result_sheet.title = "Result"
-        
-        # Use the appropriate selected column variables for each file
-        if not hasattr(root, 'selected_col1') or not hasattr(root, 'selected_col2'):
-            raise ValueError("Please select columns for matching")
             
+        # Get column names and threshold
         col1 = selected_col1.get()
         col2 = selected_col2.get()
         
+        try:
+            threshold = float(threshold_var.get())
+        except ValueError:
+            threshold = 80.0  # Default if invalid input
+
+        # Load workbooks
+        file1 = op.load_workbook(root.file1_path)
+        sheet1 = file1[selected_sheet1.get()]
+        file2 = op.load_workbook(root.file2_path)
+        sheet2 = file2[selected_sheet2.get()]
+
         # Get column indices
         df1 = pd.read_excel(root.file1_path, selected_sheet1.get())
         df2 = pd.read_excel(root.file2_path, selected_sheet2.get())
@@ -209,36 +214,128 @@ def start_matching():
             
         col1_index = df1.columns.get_loc(col1)
         col2_index = df2.columns.get_loc(col2)
-        
-        row_tracker = 1
-        values_to_match = [r[col2_index] for r in sheet2.iter_rows(values_only=True) if r[col2_index]]
 
-        # Set up result headers
-        result_sheet['A1'].value = col1
-        result_sheet['B1'].value = f"Matched {col2}"
+        # Create workbook and sheets
+        result = op.Workbook()
+        filtered_sheet = result.active
+        filtered_sheet.title = "Filtered Results"
+        all_results_sheet = result.create_sheet(title="All Results")
+
+        # Set up headers for both sheets
+        for sheet in [filtered_sheet, all_results_sheet]:
+            sheet['A1'].value = col1
+            sheet['B1'].value = f"Matched {col2}"
+            sheet['C1'].value = "Match Score"
+
+        # Color definitions
+        green_fill = op.styles.PatternFill(start_color='90EE90', end_color='90EE90', fill_type='solid')
+        orange_fill = op.styles.PatternFill(start_color='FFB347', end_color='FFB347', fill_type='solid')
+        red_fill = op.styles.PatternFill(start_color='FF6B6B', end_color='FF6B6B', fill_type='solid')
+
+        # Initialize counters and get values to match
+        row_tracker_filtered = 1
+        row_tracker_all = 1
+        values_to_match = [str(r[col2_index]) for r in sheet2.iter_rows(values_only=True) if r[col2_index]]
+
+        # Process matches
+        for t in sheet1.iter_rows(values_only=True, min_row=2):  # Skip header row
+            value = t[col1_index]
+            if value:
+                # Convert to string to ensure compatibility
+                str_value = str(value)
+                matches = process.extract(str_value, values_to_match, limit=1)
+                if matches and len(matches) > 0:
+                    # Correctly handle the tuple unpacking - rapidfuzz returns (match, score, index)
+                    match_tuple = matches[0]
+                    # Extract just the first two elements we need
+                    match_value = match_tuple[0]
+                    match_score = match_tuple[1]
+                    
+                    # Add to filtered sheet if meets threshold
+                    if match_score >= threshold:
+                        row_tracker_filtered += 1
+                        filtered_sheet.cell(row=row_tracker_filtered, column=1, value=value)
+                        filtered_sheet.cell(row=row_tracker_filtered, column=2, value=match_value)
+                        filtered_sheet.cell(row=row_tracker_filtered, column=3, value=match_score)
+                    
+                    # Add to all results sheet with color coding
+                    row_tracker_all += 1
+                    cells = [
+                        all_results_sheet.cell(row=row_tracker_all, column=1, value=value),
+                        all_results_sheet.cell(row=row_tracker_all, column=2, value=match_value),
+                        all_results_sheet.cell(row=row_tracker_all, column=3, value=match_score)
+                    ]
+                    
+                    fill = (green_fill if match_score >= threshold 
+                           else orange_fill if match_score >= threshold * 0.8 
+                           else red_fill)
+                    
+                    for cell in cells:
+                        cell.fill = fill
+
+        # Auto-adjust column widths and save
+        for sheet in [filtered_sheet, all_results_sheet]:
+            for col in sheet.columns:
+                max_length = max(len(str(cell.value or "")) for cell in col)
+                sheet.column_dimensions[col[0].column_letter].width = max_length + 2
+
+        # Create safe filename
+        result_sheet = result.active
+        result_sheet.title = "Result"
+        if selected_col1.get() not in dropdown1['menu'].entrycget(0, 'label'):
+            raise ValueError("Selected column is not valid.")
+        options = [col for col in df1.columns]  # Ensure options is defined
+        index_of_item = options.index(selected_col1.get())
+        row_tracker = 1
+        email2 = [r[index_of_item] for r in sheet2.iter_rows(values_only=True) if r[index_of_item]]
+
+       
+        result_sheet['A1'].value = f"{selected_col1.get()} from first file "
+        result_sheet['B1'].value = f"{selected_col2.get()} from second file"
         result_sheet['C1'].value = "Match Score"
 
         res = collections.defaultdict(list)
 
-        # Skip header row
-        rows = list(sheet1.iter_rows(values_only=True))
-        if rows:  # Skip header
-            for t in rows[1:]:
-                value = t[col1_index]
-                if value:
-                    res[value] = process.extract(value, values_to_match, limit=1)
-                    result_sheet[f'A{row_tracker + 1}'].value = value
-                    if res[value]:  # Check if we got any matches
-                        result_sheet[f'B{row_tracker + 1}'].value = res[value][0][0]
-                        result_sheet[f'C{row_tracker + 1}'].value = res[value][0][1]
-                    row_tracker += 1
+        for t in sheet1.iter_rows(values_only=True):
+            email = t[index_of_item]
+            if email:
+                res[email] = process.extract(email, email2, limit=1)
+                result_sheet[f'A{row_tracker + 1}'].value = email
+                result_sheet[f'B{row_tracker + 1}'].value = res[email][0][0]
+                result_sheet[f'C{row_tracker + 1}'].value = res[email][0][1]
+                row_tracker += 1
 
         current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        result.save(f"{custom_filename}_{current_time}.xlsx")
-        messagebox.showinfo("Success", f"Matching complete! Results saved as '{custom_filename}_{current_time}.xlsx'.")
+        result_filename = f"{custom_filename}_{current_time}.xlsx"
+        
+        # Try to save the file
+        try:
+            result.save(result_filename)
+            messagebox.showinfo("Success", 
+                f"Matching complete!\nResults saved as '{result_filename}'\n" +
+                f"Sheet 1: Matches >= {threshold}%\n" +
+                "Sheet 2: All matches with color coding:\n" +
+                "  Green: Meets threshold\n" +
+                "  Orange: Near threshold\n" +
+                "  Red: Below threshold")
+        except PermissionError:
+            messagebox.showerror("Error", 
+                f"Could not save the file. The file '{result_filename}' may be in use or you don't have permission to write to this location.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not save the file: {e}")
+        fn = f"{custom_filename}_{current_time}.xlsx"
+        result.save(fn)
+        messagebox.showinfo("Success", f"Matching complete! Results saved as '{fn}'.")
 
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
+
+    print(f"Selected column for File 1: {selected_col1.get()}")
+    print(f"Selected column for File 2: {selected_col2.get()}")
+    print(f"Columns in File 1: {list(df1.columns)}")
+    print(f"Columns in File 2: {list(df2.columns)}")
+    print(f"Selected column for File 1: {selected_col1.get()}")
+    print(f"Selected column for File 2: {selected_col2.get()}")
 
 
 try:
@@ -283,12 +380,12 @@ files_canvas.configure(
     xscrollcommand=files_scrollbar_x.set
 )
 
-# Pack the scrollbars and canvas
+
 files_scrollbar_y.pack(side="right", fill="y")
 files_scrollbar_x.pack(side="bottom", fill="x")
 files_canvas.pack(side="left", fill="both", expand=True)
 
-# Add mouse wheel support for vertical scrolling
+
 def _on_mousewheel(event):
     files_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
@@ -318,6 +415,13 @@ files_canvas.bind_all("<MouseWheel>", _on_mousewheel)
 files_canvas.bind_all("<Shift-MouseWheel>", _on_shift_mousewheel)
 
 # Add these bindings for better scrolling experience
+root.bind('<Up>', lambda event: files_canvas.yview_scroll(-1, "units"))
+root.bind('<Down>', lambda event: files_canvas.yview_scroll(1, "units"))
+root.bind('<Left>', lambda event: files_canvas.xview_scroll(-1, "units"))
+root.bind('<Right>', lambda event: files_canvas.xview_scroll(1, "units"))
+root.bind('<Prior>', lambda event: files_canvas.yview_scroll(-1, "pages"))
+root.bind('<Next>', lambda event: files_canvas.yview_scroll(1, "pages"))
+
 root.bind('<Up>', lambda event: files_canvas.yview_scroll(-1, "units"))
 root.bind('<Down>', lambda event: files_canvas.yview_scroll(1, "units"))
 root.bind('<Left>', lambda event: files_canvas.xview_scroll(-1, "units"))
@@ -378,8 +482,6 @@ tree2["show"] = "headings"
 tree2_scroll_y.config(command=tree2.yview)
 tree2_scroll_x.config(command=tree2.xview)
 
-# Set up the control frame to match the image layout
-# Configure grid columns to expand evenly
 control_frame.grid_columnconfigure(0, weight=1)
 control_frame.grid_columnconfigure(1, weight=1)
 
@@ -391,49 +493,71 @@ file1_label.grid(row=0, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
 file1_btn = tk.Button(control_frame, text="Choose File 1", command=select_file1, height=2)
 file1_btn.grid(row=1, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
 
-# File 2 selection label - left side only
+# File 2 selection label - full width
 file2_label = tk.Label(control_frame, text="Selected: ", bg="light gray", relief="sunken", height=2)
-file2_label.grid(row=2, column=0, pady=5, padx=5, sticky="ew")
+file2_label.grid(row=2, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
 
-# Choose File 2 button - right side only
+# Choose File 2 button - full width
 file2_btn = tk.Button(control_frame, text="Choose File 2", command=select_file2, height=2)
-file2_btn.grid(row=2, column=1, pady=5, padx=5, sticky="ew")
+file2_btn.grid(row=3, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
 
 # Sheet selection for File 1
 sheet1_label = tk.Label(control_frame, text="Sheet for File 1:")
-sheet1_label.grid(row=3, column=0, sticky="w", pady=5, padx=5)
+sheet1_label.grid(row=4, column=0, sticky="w", pady=5, padx=5)
 selected_sheet1 = StringVar(root)
 selected_sheet1.set("Sheet1")  # Default value
 sheet1_dropdown = tk.OptionMenu(control_frame, selected_sheet1, "Sheet1")
-sheet1_dropdown.grid(row=3, column=1, pady=5, padx=5, sticky="ew")
+sheet1_dropdown.grid(row=4, column=1, pady=5, padx=5, sticky="ew")
 selected_sheet1.trace('w', on_sheet1_selected)  # Call function when selection changes
 
 # Sheet selection for File 2
 sheet2_label = tk.Label(control_frame, text="Sheet for File 2:")
-sheet2_label.grid(row=6, column=0, sticky="w", pady=5, padx=5)
+sheet2_label.grid(row=5, column=0, sticky="w", pady=5, padx=5)
 selected_sheet2 = StringVar(root)
 selected_sheet2.set("Sheet1")  # Default value
 sheet2_dropdown = tk.OptionMenu(control_frame, selected_sheet2, "Sheet1")
-sheet2_dropdown.grid(row=6, column=1, pady=5, padx=5, sticky="ew")
+sheet2_dropdown.grid(row=5, column=1, pady=5, padx=5, sticky="ew")
 selected_sheet2.trace('w', on_sheet2_selected)  # Call function when selection changes
 
 # Column selection for File 1
-label_col_file1 = tk.Label(control_frame, text="Columns for File 1")
-label_col_file1.grid(row=4, column=0, sticky="w", pady=5, padx=5)
-dropdown_placeholder1 = tk.Label(control_frame, text="Email", relief="raised", width=15)
-dropdown_placeholder1.grid(row=4, column=1, pady=5, padx=5, sticky="ew")
+label_col_file1 = tk.Label(control_frame, text="Column for File 1:")
+label_col_file1.grid(row=6, column=0, sticky="w", pady=5, padx=5)
+dropdown_placeholder1 = tk.Label(control_frame, text="Select column", relief="raised", width=15)
+dropdown_placeholder1.grid(row=6, column=1, pady=5, padx=5, sticky="ew")
 
 # Column selection for File 2
-label_col_file2 = tk.Label(control_frame, text="Columns for File 2")
-label_col_file2.grid(row=5, column=0, sticky="w", pady=5, padx=5)
-dropdown_placeholder2 = tk.Label(control_frame, text="Email", relief="raised", width=15)
-dropdown_placeholder2.grid(row=5, column=1, pady=5, padx=5, sticky="ew")
+label_col_file2 = tk.Label(control_frame, text="Column for File 2:")
+label_col_file2.grid(row=7, column=0, sticky="w", pady=5, padx=5)
+dropdown_placeholder2 = tk.Label(control_frame, text="Select column", relief="raised", width=15)
+dropdown_placeholder2.grid(row=7, column=1, pady=5, padx=5, sticky="ew")
 
-# Start matching button - full width with green background
+# Match settings
+threshold_frame = ttk.LabelFrame(control_frame, text="Match Settings")
+threshold_frame.grid(row=8, column=0, columnspan=2, pady=10, padx=5, sticky="ew")
+
+threshold_label = ttk.Label(threshold_frame, text="Minimum Match %:")
+threshold_label.pack(side="left", padx=5)
+
+threshold_var = tk.StringVar(value="80")  # Default 80%
+threshold_spinbox = ttk.Spinbox(
+    threshold_frame,
+    from_=0,
+    to=100,
+    textvariable=threshold_var,
+    width=5
+)
+threshold_spinbox.pack(side="right", padx=5, pady=5)
+
+# Match button
 
 match_btn = round_button(control_frame, radius=25, fill="#7b6cd9",font=("Poppins", 9, "bold"), width=170, text="Start matching", command=start_matching)
 
 # match_btn = tk.Button(control_frame, text="Start Matching", command=start_matching, bg="green", fg="#7b6cd9", height=2)
-match_btn.grid(row=7, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
+match_btn.grid(row=9, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
 
+# Add a status label
+status_label = tk.Label(control_frame, text="Ready", bd=1, relief="sunken", anchor="w")
+status_label.grid(row=10, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
+
+# Start the application
 root.mainloop()
