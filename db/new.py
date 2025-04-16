@@ -6,6 +6,11 @@ import collections
 import tkinter as tk
 from datetime import datetime
 from tkinter import ttk
+import ctypes
+from rounded_button import round_button
+
+# def select_column(event):
+#     region = 
 
 def get_sheet_names(file_path):
     """Get all sheet names from an Excel file."""
@@ -142,8 +147,8 @@ def select_file1():
     if file_path:
         root.file1_path = file_path
         filename = file_path.split('/')[-1]
+        frame1.config(tex=filename)
         file1_label.config(text=f"Selected: {filename}")
-        
         # Update sheet dropdown
         update_sheet_dropdown(file_path, is_file1=True)
         
@@ -156,6 +161,7 @@ def select_file2():
     if file_path:
         root.file2_path = file_path
         filename = file_path.split('/')[-1]
+        frame2.config(tex=filename)
         file2_label.config(text=f"Selected: {filename}")
         
         # Update sheet dropdown
@@ -235,6 +241,11 @@ def start_matching():
         messagebox.showerror("Error", f"An error occurred: {e}")
 
 
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(1) 
+except:
+    pass
+
 root = tk.Tk()
 root.title("Excel Fuzzy Matching")
 root.geometry("1200x800")  # Set initial window size
@@ -281,6 +292,24 @@ files_canvas.pack(side="left", fill="both", expand=True)
 def _on_mousewheel(event):
     files_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
+
+
+def on_column_click(event):
+    global selected_col1
+    column_id = event.widget.identify_column(event.x)
+    column_index = int(column_id.strip('#')) - 1 
+    column_name = event.widget.heading(column_index, 'text')
+    selected_col1.set(column_name)
+    # print(f"Column {column_name} clicked!")
+def on_column_click_2(event):
+    global selected_col2
+    column_id = tree2.identify_column(event.x)
+    column_index = int(column_id.strip('#')) - 1 
+    column_name = tree2.heading(column_index, 'text')
+    selected_col2.set(column_name)
+    # print(f"Column {column_name} clicked!")
+
+
 # Add shift + mouse wheel for horizontal scrolling
 def _on_shift_mousewheel(event):
     files_canvas.xview_scroll(int(-1*(event.delta/120)), "units")
@@ -297,19 +326,19 @@ root.bind('<Prior>', lambda event: files_canvas.yview_scroll(-1, "pages"))
 root.bind('<Next>', lambda event: files_canvas.yview_scroll(1, "pages"))
 
 style = ttk.Style()
-style.theme_use("default")
+style.theme_use("vista")
+
 
 # Change Treeview heading text color (foreground)
-style.configure("Treeview.Heading", foreground="red", font=('Helvetica', 10, 'bold'))
+style.configure("Treeview.Heading", foreground="#7b6cd9", font=('Helvetica', 10, 'bold'))
 
 # First tree with scrollbars
-frame1 = ttk.LabelFrame(files_scroll_frame, text="First Excel File")
+frame1 = tk.LabelFrame(files_scroll_frame, text="First Excel File", background="#7b6cd9", foreground="white", font=("Poppins", 8, "bold"))
 frame1.pack(padx=5, pady=5, fill="both", expand=True)
 
 # Create scrollbar frame1
 tree1_frame = ttk.Frame(frame1)
 tree1_frame.pack(fill="both", expand=True)
-
 # Create vertical scrollbar
 tree1_scroll_y = ttk.Scrollbar(tree1_frame)
 tree1_scroll_y.pack(side="right", fill="y")
@@ -319,6 +348,7 @@ tree1_scroll_x = ttk.Scrollbar(tree1_frame, orient="horizontal")
 tree1_scroll_x.pack(side="bottom", fill="x")
 
 tree1 = ttk.Treeview(tree1_frame, yscrollcommand=tree1_scroll_y.set, xscrollcommand=tree1_scroll_x.set)
+tree1.bind("<Button-1>", on_column_click)
 tree1.pack(fill="both", expand=True)
 tree1["show"] = "headings"
 
@@ -326,7 +356,7 @@ tree1_scroll_y.config(command=tree1.yview)
 tree1_scroll_x.config(command=tree1.xview)
 
 # Second tree with scrollbars
-frame2 = ttk.LabelFrame(files_scroll_frame, text="Second Excel File")
+frame2 = tk.LabelFrame(files_scroll_frame, text="Second Excel File", background="#7b6cd9", foreground="white", font=("Poppins", 8, "bold"))
 frame2.pack(padx=5, pady=5, fill="both", expand=True)
 
 # create scrollbar frame2
@@ -341,6 +371,7 @@ tree2_scroll_x = ttk.Scrollbar(tree2_frame, orient="horizontal")
 tree2_scroll_x.pack(side="bottom", fill="x")
 
 tree2 = ttk.Treeview(tree2_frame, yscrollcommand=tree2_scroll_y.set, xscrollcommand=tree2_scroll_x.set)
+tree2.bind("<Button-1>", on_column_click_2)
 tree2.pack(fill="both", expand=True)
 tree2["show"] = "headings"
 
@@ -399,7 +430,10 @@ dropdown_placeholder2 = tk.Label(control_frame, text="Email", relief="raised", w
 dropdown_placeholder2.grid(row=5, column=1, pady=5, padx=5, sticky="ew")
 
 # Start matching button - full width with green background
-match_btn = tk.Button(control_frame, text="Start Matching", command=start_matching, bg="green", fg="white", height=2)
-match_btn.grid(row=7, column=0, columnspan=2, pady=10, padx=5, sticky="ew")
+
+match_btn = round_button(control_frame, radius=25, fill="#7b6cd9",font=("Poppins", 9, "bold"), width=170, text="Start matching", command=start_matching)
+
+# match_btn = tk.Button(control_frame, text="Start Matching", command=start_matching, bg="green", fg="#7b6cd9", height=2)
+match_btn.grid(row=7, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
 
 root.mainloop()
