@@ -261,7 +261,7 @@ def select_file1():
         root.file1_path = file_path
         filename = file_path.split('/')[-1]
         frame1.config(text=filename)
-        file1_label.config(text=f"Selected: {filename}")
+        # file1_label.config(text=f"Selected: {filename}")
         # Update sheet dropdown
         update_sheet_dropdown(file_path, is_file1=True)
     
@@ -271,7 +271,7 @@ def select_file2():
         root.file2_path = file_path
         filename = file_path.split('/')[-1]
         frame2.config(text=filename)
-        file2_label.config(text=f"Selected: {filename}")
+        # file2_label.config(text=f"Selected: {filename}")
         
         # Update sheet dropdown
         update_sheet_dropdown(file_path, is_file1=False)
@@ -610,6 +610,12 @@ files_canvas.pack(side="left", fill="both", expand=True)
 def _on_mousewheel(event):
     files_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
+def change_to_hand(event):
+    event.widget.config(cursor="hand2")
+
+def change_to_pointer(event):
+    event.widget.config(cursor="")
+
 def _on_shift_mousewheel(event):
     files_canvas.xview_scroll(int(-1*(event.delta/120)), "units")
 
@@ -628,11 +634,13 @@ root.bind('<Next>', lambda event: files_canvas.yview_scroll(1, "pages"))
 sheet_frame.grid_columnconfigure(0, weight=1)
 
 # File 1 selection label
-file1_label = tk.Label(sheet_frame, text="Selected: ", bg="light gray", relief="sunken", height=2)
-file1_label.grid(row=0, column=0, pady=5, padx=5, sticky="ew")
+# file1_label = tk.Label(sheet_frame, text="Selected: ", bg="light gray", relief="sunken", height=2)
+# file1_label.grid(row=0, column=0, pady=5, padx=5, sticky="ew")
 
 # Choose File 1 button
-file1_btn = tk.Button(sheet_frame, text="Choose File 1", command=select_file1, height=2)
+# file1_btn = tk.Button(sheet_frame, text="Choose File 1", command=select_file1, height=2)
+file1_btn = round_button(sheet_frame, text="Choose file 1",fill="#7b6cd9", radius=25, command=select_file1, font=('Poppins', 9, 'bold'))
+file1_btn.bind("<Enter>", change_to_hand)
 file1_btn.grid(row=1, column=0, pady=5, padx=5, sticky="ew")
 
 # Add a separator
@@ -640,11 +648,13 @@ ttk.Separator(sheet_frame, orient='horizontal').grid(row=2, column=0, sticky='ew
 
 # File 2 selection label
 # File 2 selection label
-file2_label = tk.Label(sheet_frame, text="Selected: ", bg="light gray", relief="sunken", height=2)
-file2_label.grid(row=3, column=0, pady=5, padx=5, sticky="ew")
+# file2_label = tk.Label(sheet_frame, text="Selected: ", bg="light gray", relief="sunken", height=2)
+# file2_label.grid(row=3, column=0, pady=5, padx=5, sticky="ew")
 
 # Choose File 2 button
-file2_btn = tk.Button(sheet_frame, text="Choose File 2", command=select_file2, height=2)
+# file2_btn = tk.Button(sheet_frame, text="Choose File 2", command=select_file2, height=2)
+file2_btn = round_button(sheet_frame, text="Choose file 2",fill="#7b6cd9", radius=25, command=select_file2, font=('Poppins', 9, 'bold'))
+file2_btn.bind("<Enter>", change_to_hand)
 file2_btn.grid(row=4, column=0, pady=5, padx=5, sticky="ew")
 
 # CONFIGURE CENTER PANEL (TREEVIEWS) ----------------------------------
@@ -786,6 +796,7 @@ threshold_spinbox.pack(side="right", padx=5, pady=5)
 
 # Match button
 match_btn = round_button(control_frame, radius=25, fill="#7b6cd9", font=("Poppins", 9, "bold"), width=170, text="Start matching", command=start_matching)
+match_btn.bind("<Enter>", change_to_hand)
 match_btn.grid(row=5, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
 
 # Add a status label
