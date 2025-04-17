@@ -785,7 +785,7 @@ threshold_spinbox = ttk.Spinbox(
 threshold_spinbox.pack(side="right", padx=5, pady=5)
 
 # Match button
-match_btn = round_button(control_frame, radius=25, fill="green", font=("Poppins", 9, "bold"), width=170, text="Start matching", command=start_matching)
+match_btn = round_button(control_frame, radius=25, fill="#7b6cd9", font=("Poppins", 9, "bold"), width=170, text="Start matching", command=start_matching)
 match_btn.grid(row=5, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
 
 # Add a status label
