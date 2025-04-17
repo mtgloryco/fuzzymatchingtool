@@ -9,6 +9,7 @@ import openpyxl.styles
 import collections
 import ctypes
 from rounded_button import round_button
+from openpyxl import load_workbook
 
 def get_sheet_names(file_path):
     """Get all sheet names from an Excel file."""
@@ -18,6 +19,81 @@ def get_sheet_names(file_path):
     except Exception as e:
         messagebox.showerror("Error", f"Could not read sheets: {e}")
         return ["Sheet1"]
+
+def get_tables_in_sheet(file_path, sheet_name):
+    """Return a list of real Excel tables (ListObjects) in the given sheet."""
+    try:
+        wb = load_workbook(filename=file_path)
+        sheet = wb[sheet_name]
+        tables = []
+        for table in sheet.tables.values():
+            tables.append(table.name)
+        if not tables:
+            tables.append("Full Sheet")
+        return tables
+    except Exception as e:
+        messagebox.showerror("Error", f"Could not read tables: {e}")
+        return ["Full Sheet"]
+
+def get_columns_in_table(file_path, sheet_name, table_name):
+    """Get columns from a specific table or the entire sheet."""
+    try:
+        if table_name == "Full Sheet":
+            # Get all columns from the sheet
+            df = pd.read_excel(file_path, sheet_name)
+            return list(df.columns)
+        elif table_name.startswith("Table:"):
+            # Extract table name without the prefix
+            pure_table_name = table_name.replace("Table: ", "").replace(" ++", "")
+            
+            # Try to read table data
+            workbook = op.load_workbook(file_path)
+            sheet = workbook[sheet_name]
+            
+            # Find the table range
+            table_range = None
+            
+            # Check for Excel ListObjects first (native tables)
+            if hasattr(sheet, '_tables'):
+                for table in sheet._tables:
+                    table_display_name = getattr(table, 'displayName', None)
+                    if table_display_name == pure_table_name:
+                        table_range = table.ref
+                        break
+            
+            # If not found, check defined names
+            if not table_range and hasattr(workbook, 'defined_names'):
+                if pure_table_name in workbook.defined_names:
+                    for sheet_title, cell_range in workbook.defined_names[pure_table_name].destinations:
+                        if sheet_title == sheet_name:
+                            table_range = cell_range
+                            break
+            
+            # If we found a range, extract columns
+            if table_range:
+                # Read the specific range from the Excel file
+                df = pd.read_excel(file_path, sheet_name, skiprows=None)
+                
+                # Convert range to excel coordinates
+                # This is a simplified approach, might need adjustment for complex ranges
+                if ':' in table_range:
+                    start_cell, end_cell = table_range.split(':')
+                    
+                    # Read the header row from the range
+                    cell_range = sheet[table_range]
+                    if isinstance(cell_range, tuple) and len(cell_range) > 0:
+                        header_row = cell_range[0]  # First row contains headers
+                        return [cell.value for cell in header_row if cell.value]
+                
+                # Fallback: return all columns from the sheet
+                return list(df.columns)
+            else:
+                # If table not found, return all columns from the sheet
+                df = pd.read_excel(file_path, sheet_name)
+                return list(df.columns)
+    except Exception as e:
+        messagebox.showerror("Error", f"Could not read columns: {e}")
+        return []
 
 def update_sheet_dropdown(file_path, is_file1=True):
     """Update the sheet dropdown with sheet names from the selected file."""
@@ -31,6 +107,8 @@ def update_sheet_dropdown(file_path, is_file1=True):
             for sheet in sheet_names:
                 sheet1_dropdown['menu'].add_command(label=sheet, 
                                                   command=lambda s=sheet: selected_sheet1.set(s))
+            # Update tables after sheet selection
+            update_table_dropdown(file_path, selected_sheet1.get(), is_file1=True)
         else:
             sheet2_dropdown['menu'].delete(0, 'end')
             selected_sheet2.set(sheet_names[0])
@@ -38,69 +116,110 @@ def update_sheet_dropdown(file_path, is_file1=True):
             for sheet in sheet_names:
                 sheet2_dropdown['menu'].add_command(label=sheet, 
                                                   command=lambda s=sheet: selected_sheet2.set(s))
+            # Update tables after sheet selection
+            update_table_dropdown(file_path, selected_sheet2.get(), is_file1=False)
     except Exception as e:
         messagebox.showerror("Error", f"Could not read sheets: {e}")
 
-def drop_down_menu(columns, file_label):
-    global dropdown1, dropdown2, selected_col1, selected_col2
-
-    if 'selected_col1' not in globals():
-        selected_col1 = StringVar(root)
-    if 'selected_col2' not in globals():
-        selected_col2 = StringVar(root)
-
-    # Normalize column names and ensure they are strings
-    options = [str(col).strip() for col in columns]
-
-    if file_label == "File 1":
-        selected_col1.set(options[0] if options else "")  # Set the first column as default
-
-        if 'dropdown1' in globals() and dropdown1 is not None:
-            dropdown1.destroy()
-
-        dropdown1 = ttk.OptionMenu(control_frame, selected_col1, *options)
-        dropdown1.grid(row=6, column=1, pady=5, padx=5, sticky="ew")
-        
-        # Update status
-        status_label.config(text=f"Ready - File 1 column set to: {selected_col1.get()}")
-
-    else:  # File 2
-        selected_col2.set(options[0] if options else "")  # Set the first column as default
-
-        if 'dropdown2' in globals() and dropdown2 is not None:
-            dropdown2.destroy()
-
-        dropdown2 = ttk.OptionMenu(control_frame, selected_col2, *options)
-        dropdown2.grid(row=7, column=1, pady=5, padx=5, sticky="ew")
-        
-        # Update status
-        status_label.config(text=f"Ready - File 2 column set to: {selected_col2.get()}")
-
-def load_sheet_data(file_path, sheet_name, tree, file_label):
-    """Load data from specified sheet into the treeview."""
+def update_table_dropdown(file_path, sheet_name, is_file1=True):
+    """Update the table dropdown with tables from the selected sheet."""
     try:
-        sheet = pd.read_excel(file_path, sheet_name)
-        cols = sheet.columns.tolist()
-        tree.config(columns=cols)
-        drop_down_menu(cols, file_label)  # Update the dropdown menu with columns
+        table_names = get_tables_in_sheet(file_path, sheet_name)
+        
+        if is_file1:
+            table1_dropdown['menu'].delete(0, 'end')
+            selected_table1.set(table_names[0])
+            
+            for table in table_names:
+                table1_dropdown['menu'].add_command(label=table, 
+                                                  command=lambda t=table: selected_table1.set(t))
+            # Update columns after table selection
+            update_column_dropdown(file_path, sheet_name, selected_table1.get(), is_file1=True)
+        else:
+            table2_dropdown['menu'].delete(0, 'end')
+            selected_table2.set(table_names[0])
+            
+            for table in table_names:
+                table2_dropdown['menu'].add_command(label=table, 
+                                                  command=lambda t=table: selected_table2.set(t))
+            # Update columns after table selection
+            update_column_dropdown(file_path, sheet_name, selected_table2.get(), is_file1=False)
+    except Exception as e:
+        messagebox.showerror("Error", f"Could not read tables: {e}")
 
+def update_column_dropdown(file_path, sheet_name, table_name, is_file1=True):
+    """Update the column dropdown with columns from the selected table."""
+    try:
+        columns = get_columns_in_table(file_path, sheet_name, table_name)
+        
+        if is_file1:
+            # Update dropdown menu
+            column1_dropdown['menu'].delete(0, 'end')
+            if columns:
+                selected_col1.set(columns[0])
+                for col in columns:
+                    column1_dropdown['menu'].add_command(label=col, 
+                                                     command=lambda c=col: selected_col1.set(c))
+                # Update status
+                status_label.config(text=f"Ready - File 1 column set to: {selected_col1.get()}")
+            else:
+                selected_col1.set("")
+                status_label.config(text="No columns found in selected table")
+                
+            # Update treeview to show selected table
+            load_table_data(file_path, sheet_name, table_name, tree1, "File 1")
+            
+        else:
+            # Update dropdown menu
+            column2_dropdown['menu'].delete(0, 'end')
+            if columns:
+                selected_col2.set(columns[0])
+                for col in columns:
+                    column2_dropdown['menu'].add_command(label=col, 
+                                                     command=lambda c=col: selected_col2.set(c))
+                # Update status
+                status_label.config(text=f"Ready - File 2 column set to: {selected_col2.get()}")
+            else:
+                selected_col2.set("")
+                status_label.config(text="No columns found in selected table")
+                
+            # Update treeview to show selected table
+            load_table_data(file_path, sheet_name, table_name, tree2, "File 2")
+            
+    except Exception as e:
+        messagebox.showerror("Error", f"Could not update columns: {e}")
+
+def load_table_data(file_path, sheet_name, table_name, tree, file_label):
+    """Load only the selected table's data into the treeview."""
+    try:
+        wb = load_workbook(filename=file_path)
+        ws = wb[sheet_name]
+        if table_name == "Full Sheet":
+            df = pd.read_excel(file_path, sheet_name)
+        else:
+            # Find the table by name and get its range
+            table = ws.tables[table_name]
+            data = ws[table.ref]
+            rows = [[cell.value for cell in row] for row in data]
+            df = pd.DataFrame(rows[1:], columns=rows[0])
+        # Update treeview
+        cols = df.columns.tolist()
+        tree.config(columns=cols)
         for item in tree.get_children():
             tree.delete(item)
-
         for col in cols:
             tree.heading(col, text=col)
             tree.column(col, width=100, minwidth=100)
-
-        for _, row in sheet.iterrows():
+        for _, row in df.iterrows():
             tree.insert("", "end", values=list(row))
-
     except Exception as e:
-        messagebox.showerror("Error", f"Could not load sheet data: {e}")
+        messagebox.showerror("Error", f"Could not load table data: {e}")
 
 def on_sheet1_selected(*args):
     """Called when a sheet is selected for file 1."""
     if hasattr(root, 'file1_path') and root.file1_path:
-        load_sheet_data(root.file1_path, selected_sheet1.get(), tree1, "File 1")
+        # Update tables in the selected sheet
+        update_table_dropdown(root.file1_path, selected_sheet1.get(), is_file1=True)
         
         try:
             workbook = op.load_workbook(root.file1_path)
@@ -112,7 +231,8 @@ def on_sheet1_selected(*args):
 def on_sheet2_selected(*args):
     """Called when a sheet is selected for file 2."""
     if hasattr(root, 'file2_path') and root.file2_path:
-        load_sheet_data(root.file2_path, selected_sheet2.get(), tree2, "File 2")
+        # Update tables in the selected sheet
+        update_table_dropdown(root.file2_path, selected_sheet2.get(), is_file1=False)
         
         try:
             workbook = op.load_workbook(root.file2_path)
@@ -120,6 +240,20 @@ def on_sheet2_selected(*args):
             workbook.save(root.file2_path)
         except Exception as e:
             print(f"Could not set active sheet in file: {e}")
+
+def on_table1_selected(*args):
+    """Called when a table is selected for file 1."""
+    if hasattr(root, 'file1_path') and root.file1_path:
+        # Only show the selected table's data
+        load_table_data(root.file1_path, selected_sheet1.get(), selected_table1.get(), tree1, "File 1")
+        update_column_dropdown(root.file1_path, selected_sheet1.get(), selected_table1.get(), is_file1=True)
+
+def on_table2_selected(*args):
+    """Called when a table is selected for file 2."""
+    if hasattr(root, 'file2_path') and root.file2_path:
+        # Only show the selected table's data
+        load_table_data(root.file2_path, selected_sheet2.get(), selected_table2.get(), tree2, "File 2")
+        update_column_dropdown(root.file2_path, selected_sheet2.get(), selected_table2.get(), is_file1=False)
 
 def select_file1():
     file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
@@ -130,10 +264,6 @@ def select_file1():
         file1_label.config(text=f"Selected: {filename}")
         # Update sheet dropdown
         update_sheet_dropdown(file_path, is_file1=True)
-        
-        # Load the first sheet data
-        if hasattr(root, 'selected_sheet1'):
-            load_sheet_data(file_path, selected_sheet1.get(), tree1, "File 1")
     
 def select_file2():
     file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
@@ -145,10 +275,6 @@ def select_file2():
         
         # Update sheet dropdown
         update_sheet_dropdown(file_path, is_file1=False)
-        
-        # Load the first sheet data
-        if hasattr(root, 'selected_sheet2'):
-            load_sheet_data(file_path, selected_sheet2.get(), tree2, "File 2")
 
 def highlight_column(tree, column_index):
     """Highlight only the selected column in the Treeview."""
@@ -230,7 +356,7 @@ def style_column_cells(tree, column_index):
     """Style individual cells in the selected column."""
     # This function will be used for custom styling of individual cells
     # Since tkinter treeview doesn't support individual cell styling directly,
-    # we use a workaround with item tags and rendering
+    # we use a workaround with item tags and rendering 
     
     # First, clear existing column styling
     for i in range(len(tree["columns"])):
@@ -264,9 +390,20 @@ def start_matching():
         if not selected_col1.get() or not selected_col2.get():
             raise ValueError("Please select columns for matching from both files")
 
-        # Load data to validate selected columns
-        df1 = pd.read_excel(root.file1_path, selected_sheet1.get())
-        df2 = pd.read_excel(root.file2_path, selected_sheet2.get())
+        # Load data based on selected tables and sheets
+        if selected_table1.get() == "Full Sheet":
+            df1 = pd.read_excel(root.file1_path, selected_sheet1.get())
+        else:
+            # For now, we read the entire sheet - in a more advanced version,
+            # you could read only the specified table range
+            df1 = pd.read_excel(root.file1_path, selected_sheet1.get())
+            
+        if selected_table2.get() == "Full Sheet":
+            df2 = pd.read_excel(root.file2_path, selected_sheet2.get())
+        else:
+            # For now, we read the entire sheet - in a more advanced version,
+            # you could read only the specified table range
+            df2 = pd.read_excel(root.file2_path, selected_sheet2.get())
 
         # Debug prints
         print(f"Selected column for File 1: {selected_col1.get()}")
@@ -411,25 +548,37 @@ def start_matching():
         status_label.config(text=f"Error: {str(e)}")
 
 
+# Set DPI awareness for better display on Windows
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(1) 
 except:
     pass
 
+# Create main window
 root = tk.Tk()
 root.title("Excel Fuzzy Matching")
-root.geometry("1200x800")  # Set initial window size
+root.geometry("1400x800")  # Wider window to accommodate three panels
 
-# Create main horizontal frame to hold the two sections
+# Apply style
+style = ttk.Style()
+style.theme_use("vista")
+style.configure("Treeview.Heading", foreground="#7b6cd9", font=('Helvetica', 10, 'bold'))
+
+# Create main horizontal frame to hold the three sections
 main_horizontal_frame = ttk.Frame(root)
 main_horizontal_frame.pack(fill="both", expand=True)
 
-# Create files frame on the left
-files_frame = ttk.LabelFrame(main_horizontal_frame, text="Excel Files")
+# Create sheet selection frame on the left
+sheet_frame = ttk.LabelFrame(main_horizontal_frame, text="File Selection", width=250)
+sheet_frame.pack(side="left", fill="y", padx=5, pady=5)
+sheet_frame.pack_propagate(False)  # Prevent the frame from shrinking
+
+# Create files frame in the center (for tree views)
+files_frame = ttk.LabelFrame(main_horizontal_frame, text="Excel Data")
 files_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
 
-# Create controls frame on the right with fixed width
-control_frame = ttk.LabelFrame(main_horizontal_frame, text="Controls", width=280)
+# Create controls frame on the right
+control_frame = ttk.LabelFrame(main_horizontal_frame, text="Hierarchical Selection", width=300)
 control_frame.pack(side="right", fill="y", padx=5, pady=5)
 control_frame.pack_propagate(False)  # Prevent the frame from shrinking
 
@@ -457,6 +606,7 @@ files_scrollbar_y.pack(side="right", fill="y")
 files_scrollbar_x.pack(side="bottom", fill="x")
 files_canvas.pack(side="left", fill="both", expand=True)
 
+# Configure scrolling functions
 def _on_mousewheel(event):
     files_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
@@ -466,7 +616,7 @@ def _on_shift_mousewheel(event):
 files_canvas.bind_all("<MouseWheel>", _on_mousewheel)
 files_canvas.bind_all("<Shift-MouseWheel>", _on_shift_mousewheel)
 
-# Add these bindings for better scrolling experience
+# Add keyboard binding for better scrolling
 root.bind('<Up>', lambda event: files_canvas.yview_scroll(-1, "units"))
 root.bind('<Down>', lambda event: files_canvas.yview_scroll(1, "units"))
 root.bind('<Left>', lambda event: files_canvas.xview_scroll(-1, "units"))
@@ -474,11 +624,30 @@ root.bind('<Right>', lambda event: files_canvas.xview_scroll(1, "units"))
 root.bind('<Prior>', lambda event: files_canvas.yview_scroll(-1, "pages"))
 root.bind('<Next>', lambda event: files_canvas.yview_scroll(1, "pages"))
 
-style = ttk.Style()
-style.theme_use("vista")
+# CONFIGURE LEFT PANEL (FILE SELECTION) ------------------------------
+sheet_frame.grid_columnconfigure(0, weight=1)
 
-# Change Treeview heading text color (foreground)
-style.configure("Treeview.Heading", foreground="#7b6cd9", font=('Helvetica', 10, 'bold'))
+# File 1 selection label
+file1_label = tk.Label(sheet_frame, text="Selected: ", bg="light gray", relief="sunken", height=2)
+file1_label.grid(row=0, column=0, pady=5, padx=5, sticky="ew")
+
+# Choose File 1 button
+file1_btn = tk.Button(sheet_frame, text="Choose File 1", command=select_file1, height=2)
+file1_btn.grid(row=1, column=0, pady=5, padx=5, sticky="ew")
+
+# Add a separator
+ttk.Separator(sheet_frame, orient='horizontal').grid(row=2, column=0, sticky='ew', pady=10)
+
+# File 2 selection label
+# File 2 selection label
+file2_label = tk.Label(sheet_frame, text="Selected: ", bg="light gray", relief="sunken", height=2)
+file2_label.grid(row=3, column=0, pady=5, padx=5, sticky="ew")
+
+# Choose File 2 button
+file2_btn = tk.Button(sheet_frame, text="Choose File 2", command=select_file2, height=2)
+file2_btn.grid(row=4, column=0, pady=5, padx=5, sticky="ew")
+
+# CONFIGURE CENTER PANEL (TREEVIEWS) ----------------------------------
 
 # First tree with scrollbars
 frame1 = tk.LabelFrame(files_scroll_frame, text="First Excel File", background="#7b6cd9", foreground="white", font=("Poppins", 8, "bold"))
@@ -487,6 +656,7 @@ frame1.pack(padx=5, pady=5, fill="both", expand=True)
 # Create scrollbar frame1
 tree1_frame = ttk.Frame(frame1)
 tree1_frame.pack(fill="both", expand=True)
+
 # Create vertical scrollbar
 tree1_scroll_y = ttk.Scrollbar(tree1_frame)
 tree1_scroll_y.pack(side="right", fill="y")
@@ -507,7 +677,7 @@ tree1_scroll_x.config(command=tree1.xview)
 frame2 = tk.LabelFrame(files_scroll_frame, text="Second Excel File", background="#7b6cd9", foreground="white", font=("Poppins", 8, "bold"))
 frame2.pack(padx=5, pady=5, fill="both", expand=True)
 
-# create scrollbar frame2
+# Create scrollbar frame2
 tree2_frame = ttk.Frame(frame2)
 tree2_frame.pack(fill="both", expand=True)
 
@@ -515,6 +685,7 @@ tree2_frame.pack(fill="both", expand=True)
 tree2_scroll_y = ttk.Scrollbar(tree2_frame)
 tree2_scroll_y.pack(side="right", fill="y")
 
+# Create horizontal scrollbar
 tree2_scroll_x = ttk.Scrollbar(tree2_frame, orient="horizontal")
 tree2_scroll_x.pack(side="bottom", fill="x")
 
@@ -526,60 +697,79 @@ tree2["show"] = "headings"
 tree2_scroll_y.config(command=tree2.yview)
 tree2_scroll_x.config(command=tree2.xview)
 
+# CONFIGURE RIGHT PANEL (HIERARCHICAL SELECTION) ----------------------------------
 control_frame.grid_columnconfigure(0, weight=1)
-control_frame.grid_columnconfigure(1, weight=1)
+control_frame.grid_columnconfigure(1, weight=2)
 
-# File 1 selection label - full width
-file1_label = tk.Label(control_frame, text="Selected: ", bg="light gray", relief="sunken", height=2)
-file1_label.grid(row=0, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
-
-# Choose File 1 button - full width
-file1_btn = tk.Button(control_frame, text="Choose File 1", command=select_file1, height=2)
-file1_btn.grid(row=1, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
-
-# File 2 selection label - full width
-file2_label = tk.Label(control_frame, text="Selected: ", bg="light gray", relief="sunken", height=2)
-file2_label.grid(row=2, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
-
-# Choose File 2 button - full width
-file2_btn = tk.Button(control_frame, text="Choose File 2", command=select_file2, height=2)
-file2_btn.grid(row=3, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
+# Create File 1 hierarchical section with an inset frame
+file1_hierarchy_frame = ttk.LabelFrame(control_frame, text="File 1 Hierarchy")
+file1_hierarchy_frame.grid(row=0, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
 
 # Sheet selection for File 1
-sheet1_label = tk.Label(control_frame, text="Sheet for File 1:")
-sheet1_label.grid(row=4, column=0, sticky="w", pady=5, padx=5)
+sheet1_label = ttk.Label(file1_hierarchy_frame, text="-- Sheet:")
+sheet1_label.grid(row=0, column=0, sticky="w", pady=5, padx=5)
 selected_sheet1 = StringVar(root)
 selected_sheet1.set("Sheet1")  # Default value
-sheet1_dropdown = tk.OptionMenu(control_frame, selected_sheet1, "Sheet1")
-sheet1_dropdown.grid(row=4, column=1, pady=5, padx=5, sticky="ew")
+sheet1_dropdown = ttk.OptionMenu(file1_hierarchy_frame, selected_sheet1, "Sheet1")
+sheet1_dropdown.grid(row=0, column=1, pady=5, padx=5, sticky="ew")
 selected_sheet1.trace('w', on_sheet1_selected)  # Call function when selection changes
 
-# Sheet selection for File 2
-sheet2_label = tk.Label(control_frame, text="Sheet for File 2:")
-sheet2_label.grid(row=5, column=0, sticky="w", pady=5, padx=5)
-selected_sheet2 = StringVar(root)
-selected_sheet2.set("Sheet1")  # Default value
-sheet2_dropdown = tk.OptionMenu(control_frame, selected_sheet2, "Sheet1")
-sheet2_dropdown.grid(row=5, column=1, pady=5, padx=5, sticky="ew")
-selected_sheet2.trace('w', on_sheet2_selected)  # Call function when selection changes
+# Table selection for File 1
+table1_label = ttk.Label(file1_hierarchy_frame, text="    |-- Tables:")
+table1_label.grid(row=1, column=0, sticky="w", pady=5, padx=5)
+selected_table1 = StringVar(root)
+selected_table1.set("Full Sheet")  # Default value
+table1_dropdown = ttk.OptionMenu(file1_hierarchy_frame, selected_table1, "Full Sheet")
+table1_dropdown.grid(row=1, column=1, pady=5, padx=5, sticky="ew")
+selected_table1.trace('w', on_table1_selected)  # Call function when selection changes
 
 # Column selection for File 1
-label_col_file1 = tk.Label(control_frame, text="Column for File 1:")
-label_col_file1.grid(row=6, column=0, sticky="w", pady=5, padx=5)
+column1_label = ttk.Label(file1_hierarchy_frame, text="        |-- Columns:")
+column1_label.grid(row=2, column=0, sticky="w", pady=5, padx=5)
 selected_col1 = StringVar(root)
-dropdown1 = ttk.OptionMenu(control_frame, selected_col1, "Select column")
-dropdown1.grid(row=6, column=1, pady=5, padx=5, sticky="ew")
+selected_col1.set("Select column")  # Default value
+column1_dropdown = ttk.OptionMenu(file1_hierarchy_frame, selected_col1, "Select column")
+column1_dropdown.grid(row=2, column=1, pady=5, padx=5, sticky="ew")
+
+# Add a separator
+ttk.Separator(control_frame, orient='horizontal').grid(row=1, column=0, columnspan=2, sticky='ew', pady=10)
+
+# Create File 2 hierarchical section with an inset frame
+file2_hierarchy_frame = ttk.LabelFrame(control_frame, text="File 2 Hierarchy")
+file2_hierarchy_frame.grid(row=2, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
+
+# Sheet selection for File 2
+sheet2_label = ttk.Label(file2_hierarchy_frame, text="-- Sheet:")
+sheet2_label.grid(row=0, column=0, sticky="w", pady=5, padx=5)
+selected_sheet2 = StringVar(root)
+selected_sheet2.set("Sheet1")  # Default value
+sheet2_dropdown = ttk.OptionMenu(file2_hierarchy_frame, selected_sheet2, "Sheet1")
+sheet2_dropdown.grid(row=0, column=1, pady=5, padx=5, sticky="ew")
+selected_sheet2.trace('w', on_sheet2_selected)  # Call function when selection changes
+
+# Table selection for File 2
+table2_label = ttk.Label(file2_hierarchy_frame, text="    |-- Tables:")
+table2_label.grid(row=1, column=0, sticky="w", pady=5, padx=5)
+selected_table2 = StringVar(root)
+selected_table2.set("Full Sheet")  # Default value
+table2_dropdown = ttk.OptionMenu(file2_hierarchy_frame, selected_table2, "Full Sheet")
+table2_dropdown.grid(row=1, column=1, pady=5, padx=5, sticky="ew")
+selected_table2.trace('w', on_table2_selected)  # Call function when selection changes
 
 # Column selection for File 2
-label_col_file2 = tk.Label(control_frame, text="Column for File 2:")
-label_col_file2.grid(row=7, column=0, sticky="w", pady=5, padx=5)
+column2_label = ttk.Label(file2_hierarchy_frame, text="        |-- Columns:")
+column2_label.grid(row=2, column=0, sticky="w", pady=5, padx=5)
 selected_col2 = StringVar(root)
-dropdown2 = ttk.OptionMenu(control_frame, selected_col2, "Select column")
-dropdown2.grid(row=7, column=1, pady=5, padx=5, sticky="ew")
+selected_col2.set("Select column")  # Default value
+column2_dropdown = ttk.OptionMenu(file2_hierarchy_frame, selected_col2, "Select column")
+column2_dropdown.grid(row=2, column=1, pady=5, padx=5, sticky="ew")
+
+# Add a separator
+ttk.Separator(control_frame, orient='horizontal').grid(row=3, column=0, columnspan=2, sticky='ew', pady=10)
 
 # Match settings
 threshold_frame = ttk.LabelFrame(control_frame, text="Match Settings")
-threshold_frame.grid(row=8, column=0, columnspan=2, pady=10, padx=5, sticky="ew")
+threshold_frame.grid(row=4, column=0, columnspan=2, pady=10, padx=5, sticky="ew")
 
 threshold_label = ttk.Label(threshold_frame, text="Minimum Match %:")
 threshold_label.pack(side="left", padx=5)
@@ -596,11 +786,11 @@ threshold_spinbox.pack(side="right", padx=5, pady=5)
 
 # Match button
 match_btn = round_button(control_frame, radius=25, fill="green", font=("Poppins", 9, "bold"), width=170, text="Start matching", command=start_matching)
-match_btn.grid(row=9, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
+match_btn.grid(row=5, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
 
 # Add a status label
 status_label = tk.Label(control_frame, text="Ready", bd=1, relief="sunken", anchor="w")
-status_label.grid(row=10, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
+status_label.grid(row=6, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
 
 # Start the application
 root.mainloop()
