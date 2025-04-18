@@ -207,9 +207,11 @@ def load_table_data(file_path, sheet_name, table_name, tree, file_label):
         tree.config(columns=cols)
         for item in tree.get_children():
             tree.delete(item)
+        parent_width = int(files_frame.winfo_width())
+        col_nums = len(cols)
         for col in cols:
             tree.heading(col, text=col)
-            tree.column(col, width=100, minwidth=100)
+            tree.column(col, width=20)
         for _, row in df.iterrows():
             tree.insert("", "end", values=list(row))
     except Exception as e:
@@ -299,6 +301,7 @@ def highlight_column(tree, column_index):
 def on_column_click(event):
     """Handle column click for File 1."""
     column_id = event.widget.identify_column(event.x)
+    
     if column_id:  # Check if a valid column was clicked
         try:
             column_index = int(column_id.strip('#')) - 1
@@ -660,11 +663,11 @@ file2_btn.grid(row=4, column=0, pady=5, padx=5, sticky="ew")
 # CONFIGURE CENTER PANEL (TREEVIEWS) ----------------------------------
 
 # First tree with scrollbars
-frame1 = tk.LabelFrame(files_scroll_frame, text="First Excel File", background="#7b6cd9", foreground="white", font=("Poppins", 8, "bold"))
+frame1 = tk.LabelFrame(files_scroll_frame, text="First Excel File", background="#7b6cd9", foreground="white", font=("Poppins", 8, "bold"), width=700)
 frame1.pack(padx=5, pady=5, fill="both", expand=True)
 
 # Create scrollbar frame1
-tree1_frame = ttk.Frame(frame1)
+tree1_frame = ttk.Frame(frame1, width=1000)
 tree1_frame.pack(fill="both", expand=True)
 
 # Create vertical scrollbar
@@ -682,6 +685,7 @@ tree1["show"] = "headings"
 
 tree1_scroll_y.config(command=tree1.yview)
 tree1_scroll_x.config(command=tree1.xview)
+
 
 # Second tree with scrollbars
 frame2 = tk.LabelFrame(files_scroll_frame, text="Second Excel File", background="#7b6cd9", foreground="white", font=("Poppins", 8, "bold"))
