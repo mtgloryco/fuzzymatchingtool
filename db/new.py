@@ -10,6 +10,7 @@ import collections
 import ctypes
 from rounded_button import round_button
 from openpyxl import load_workbook
+import time
 
 def get_sheet_names(file_path):
     """Get all sheet names from an Excel file."""
@@ -381,8 +382,42 @@ def style_column_cells(tree, column_index):
               foreground=fixed_map("foreground"),
               background=fixed_map("background"))
 
+def show_progress_ui():
+    global progress_bar, progress_label
+    progress_window = tk.Toplevel(root)
+    progress_window.title("Matching Progress")
+    progress_window.geometry("300x150")
+    progress_window.transient(root)
+    progress_window.grab_set()
+    
+    # Center the progress window
+    progress_window.geometry("+%d+%d" % (
+        root.winfo_rootx() + root.winfo_width()/2 - 150,
+        root.winfo_rooty() + root.winfo_height()/2 - 75))
+
+    # Progress label
+    progress_label = ttk.Label(progress_window, text="Progress: 0%")
+    progress_label.pack(pady=10)
+
+    # Progress bar
+    progress_bar = ttk.Progressbar(
+        progress_window,
+        variable=progress_var,
+        maximum=100,
+        mode='determinate',
+        length=200
+    )
+    progress_bar.pack(pady=10)
+    
+    return progress_window
+
 def start_matching():
     try:
+        # Show progress window
+        progress_window = show_progress_ui()
+        progress_var.set(0)
+        root.update()
+
         status_label.config(text="Processing...")
         root.update()
         
@@ -481,8 +516,18 @@ def start_matching():
         row_tracker_all = 1
         values_to_match = [str(r[col2_index]) for r in sheet2.iter_rows(values_only=True) if r[col2_index]]
 
+        # Get total number of rows for progress calculation
+        total_rows = len(list(sheet1.iter_rows(min_row=2)))
+        processed_rows = 0
+
         # Process matches
         for t in sheet1.iter_rows(values_only=True, min_row=2):  # Skip header row
+            processed_rows += 1
+            progress = (processed_rows / total_rows) * 100
+            progress_var.set(progress)
+            progress_label.config(text=f"Progress: {progress:.1f}%")
+            root.update()
+
             value = t[col1_index]
             if value:
                 # Convert to string to ensure compatibility
@@ -546,7 +591,16 @@ def start_matching():
             messagebox.showerror("Error", f"Could not save the file: {e}")
             status_label.config(text=f"Error: {str(e)}")
 
+        # Show completion message and destroy progress window
+        progress_var.set(100)
+        progress_label.config(text="Progress: 100%")
+        root.update()
+        time.sleep(0.5)  # Short delay to show 100%
+        progress_window.destroy()
+
     except Exception as e:
+        if 'progress_window' in locals():
+            progress_window.destroy()
         messagebox.showerror("Error", f"An error occurred: {e}")
         status_label.config(text=f"Error: {str(e)}")
 
@@ -806,6 +860,11 @@ match_btn.grid(row=5, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
 # Add a status label
 status_label = tk.Label(control_frame, text="Ready", bd=1, relief="sunken", anchor="w")
 status_label.grid(row=6, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
+
+# Add these variables after creating the root window
+progress_var = tk.DoubleVar()
+progress_label = None
+progress_bar = None
 
 # Start the application
 root.mainloop()
