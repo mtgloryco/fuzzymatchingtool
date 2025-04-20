@@ -534,8 +534,7 @@ def perform_matching():
                         'source_value': row[col1],
                         'matched_value': match_value,
                         'score': match_score,
-                        'source_row': i,
-                        'all_columns': row.to_dict()
+                        
                     })
             
             # Update progress
