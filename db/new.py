@@ -1,16 +1,28 @@
 import openpyxl as op
 import pandas as pd
-from rapidfuzz import process
-from tkinter import filedialog, messagebox, StringVar, simpledialog
+from rapidfuzz import process, fuzz
+from tkinter import filedialog, messagebox, StringVar, simpledialog, ttk, scrolledtext
 import tkinter as tk
 from datetime import datetime
-from tkinter import ttk
 import openpyxl.styles
 import collections
 import ctypes
+import time
+import re
+import threading
 from rounded_button import round_button
 from openpyxl import load_workbook
-import time
+
+# Set DPI awareness for better display on Windows
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+except:
+    pass
+
+# Global variable declarations
+progress_label = None
+
+# ---------------------------- Utility Functions ---------------------------- #
 
 def get_sheet_names(file_path):
     """Get all sheet names from an Excel file."""
@@ -40,21 +52,16 @@ def get_columns_in_table(file_path, sheet_name, table_name):
     """Get columns from a specific table or the entire sheet."""
     try:
         if table_name == "Full Sheet":
-            # Get all columns from the sheet
             df = pd.read_excel(file_path, sheet_name)
             return list(df.columns)
         elif table_name.startswith("Table:"):
-            # Extract table name without the prefix
             pure_table_name = table_name.replace("Table: ", "").replace(" ++", "")
             
-            # Try to read table data
             workbook = op.load_workbook(file_path)
             sheet = workbook[sheet_name]
             
-            # Find the table range
             table_range = None
             
-            # Check for Excel ListObjects first (native tables)
             if hasattr(sheet, '_tables'):
                 for table in sheet._tables:
                     table_display_name = getattr(table, 'displayName', None)
@@ -62,7 +69,6 @@ def get_columns_in_table(file_path, sheet_name, table_name):
                         table_range = table.ref
                         break
             
-            # If not found, check defined names
             if not table_range and hasattr(workbook, 'defined_names'):
                 if pure_table_name in workbook.defined_names:
                     for sheet_title, cell_range in workbook.defined_names[pure_table_name].destinations:
@@ -70,31 +76,24 @@ def get_columns_in_table(file_path, sheet_name, table_name):
                             table_range = cell_range
                             break
             
-            # If we found a range, extract columns
             if table_range:
-                # Read the specific range from the Excel file
-                df = pd.read_excel(file_path, sheet_name, skiprows=None)
-                
-                # Convert range to excel coordinates
-                # This is a simplified approach, might need adjustment for complex ranges
                 if ':' in table_range:
                     start_cell, end_cell = table_range.split(':')
-                    
-                    # Read the header row from the range
                     cell_range = sheet[table_range]
                     if isinstance(cell_range, tuple) and len(cell_range) > 0:
-                        header_row = cell_range[0]  # First row contains headers
+                        header_row = cell_range[0]
                         return [cell.value for cell in header_row if cell.value]
                 
-                # Fallback: return all columns from the sheet
+                df = pd.read_excel(file_path, sheet_name)
                 return list(df.columns)
             else:
-                # If table not found, return all columns from the sheet
                 df = pd.read_excel(file_path, sheet_name)
                 return list(df.columns)
     except Exception as e:
         messagebox.showerror("Error", f"Could not read columns: {e}")
         return []
+
+# ---------------------------- UI Update Functions ---------------------------- #
 
 def update_sheet_dropdown(file_path, is_file1=True):
     """Update the sheet dropdown with sheet names from the selected file."""
@@ -108,7 +107,6 @@ def update_sheet_dropdown(file_path, is_file1=True):
             for sheet in sheet_names:
                 sheet1_dropdown['menu'].add_command(label=sheet, 
                                                   command=lambda s=sheet: selected_sheet1.set(s))
-            # Update tables after sheet selection
             update_table_dropdown(file_path, selected_sheet1.get(), is_file1=True)
         else:
             sheet2_dropdown['menu'].delete(0, 'end')
@@ -117,7 +115,6 @@ def update_sheet_dropdown(file_path, is_file1=True):
             for sheet in sheet_names:
                 sheet2_dropdown['menu'].add_command(label=sheet, 
                                                   command=lambda s=sheet: selected_sheet2.set(s))
-            # Update tables after sheet selection
             update_table_dropdown(file_path, selected_sheet2.get(), is_file1=False)
     except Exception as e:
         messagebox.showerror("Error", f"Could not read sheets: {e}")
@@ -134,7 +131,6 @@ def update_table_dropdown(file_path, sheet_name, is_file1=True):
             for table in table_names:
                 table1_dropdown['menu'].add_command(label=table, 
                                                   command=lambda t=table: selected_table1.set(t))
-            # Update columns after table selection
             update_column_dropdown(file_path, sheet_name, selected_table1.get(), is_file1=True)
         else:
             table2_dropdown['menu'].delete(0, 'end')
@@ -143,7 +139,6 @@ def update_table_dropdown(file_path, sheet_name, is_file1=True):
             for table in table_names:
                 table2_dropdown['menu'].add_command(label=table, 
                                                   command=lambda t=table: selected_table2.set(t))
-            # Update columns after table selection
             update_column_dropdown(file_path, sheet_name, selected_table2.get(), is_file1=False)
     except Exception as e:
         messagebox.showerror("Error", f"Could not read tables: {e}")
@@ -154,76 +149,79 @@ def update_column_dropdown(file_path, sheet_name, table_name, is_file1=True):
         columns = get_columns_in_table(file_path, sheet_name, table_name)
         
         if is_file1:
-            # Update dropdown menu
             column1_dropdown['menu'].delete(0, 'end')
             if columns:
                 selected_col1.set(columns[0])
                 for col in columns:
                     column1_dropdown['menu'].add_command(label=col, 
                                                      command=lambda c=col: selected_col1.set(c))
-                # Update status
                 status_label.config(text=f"Ready - File 1 column set to: {selected_col1.get()}")
             else:
                 selected_col1.set("")
                 status_label.config(text="No columns found in selected table")
                 
-            # Update treeview to show selected table
             load_table_data(file_path, sheet_name, table_name, tree1, "File 1")
             
         else:
-            # Update dropdown menu
             column2_dropdown['menu'].delete(0, 'end')
             if columns:
                 selected_col2.set(columns[0])
                 for col in columns:
                     column2_dropdown['menu'].add_command(label=col, 
                                                      command=lambda c=col: selected_col2.set(c))
-                # Update status
                 status_label.config(text=f"Ready - File 2 column set to: {selected_col2.get()}")
             else:
                 selected_col2.set("")
                 status_label.config(text="No columns found in selected table")
                 
-            # Update treeview to show selected table
             load_table_data(file_path, sheet_name, table_name, tree2, "File 2")
             
     except Exception as e:
         messagebox.showerror("Error", f"Could not update columns: {e}")
 
+def auto_adjust_columns(tree):
+    """Auto-adjust column widths based on content"""
+    for col in tree["columns"]:
+        max_len = max(
+            len(str(tree.heading(col)["text"])),
+            *[len(str(tree.set(item, col))) for item in tree.get_children()],
+            10
+        )
+        tree.column(col, width=max_len * 8)
+
 def load_table_data(file_path, sheet_name, table_name, tree, file_label):
     """Load only the selected table's data into the treeview."""
     try:
-        wb = load_workbook(filename=file_path)
-        ws = wb[sheet_name]
         if table_name == "Full Sheet":
             df = pd.read_excel(file_path, sheet_name)
         else:
-            # Find the table by name and get its range
+            wb = load_workbook(filename=file_path)
+            ws = wb[sheet_name]
             table = ws.tables[table_name]
             data = ws[table.ref]
             rows = [[cell.value for cell in row] for row in data]
             df = pd.DataFrame(rows[1:], columns=rows[0])
-        # Update treeview
-        cols = df.columns.tolist()
-        tree.config(columns=cols)
-        for item in tree.get_children():
-            tree.delete(item)
-        parent_width = int(files_frame.winfo_width())
-        col_nums = len(cols)
-        for col in cols:
+        
+        tree.delete(*tree.get_children())
+        tree["columns"] = list(df.columns)
+        
+        for col in df.columns:
             tree.heading(col, text=col)
-            tree.column(col, width=20)
+            tree.column(col, width=100)
+            
         for _, row in df.iterrows():
             tree.insert("", "end", values=list(row))
+            
+        tree.after(100, lambda: auto_adjust_columns(tree))
+        
     except Exception as e:
         messagebox.showerror("Error", f"Could not load table data: {e}")
 
+# ---------------------------- Event Handlers ---------------------------- #
+
 def on_sheet1_selected(*args):
-    """Called when a sheet is selected for file 1."""
     if hasattr(root, 'file1_path') and root.file1_path:
-        # Update tables in the selected sheet
         update_table_dropdown(root.file1_path, selected_sheet1.get(), is_file1=True)
-        
         try:
             workbook = op.load_workbook(root.file1_path)
             workbook.active = workbook[selected_sheet1.get()]
@@ -232,11 +230,8 @@ def on_sheet1_selected(*args):
             print(f"Could not set active sheet in file: {e}")
 
 def on_sheet2_selected(*args):
-    """Called when a sheet is selected for file 2."""
     if hasattr(root, 'file2_path') and root.file2_path:
-        # Update tables in the selected sheet
         update_table_dropdown(root.file2_path, selected_sheet2.get(), is_file1=False)
-        
         try:
             workbook = op.load_workbook(root.file2_path)
             workbook.active = workbook[selected_sheet2.get()]
@@ -245,85 +240,37 @@ def on_sheet2_selected(*args):
             print(f"Could not set active sheet in file: {e}")
 
 def on_table1_selected(*args):
-    """Called when a table is selected for file 1."""
     if hasattr(root, 'file1_path') and root.file1_path:
-        # Only show the selected table's data
         load_table_data(root.file1_path, selected_sheet1.get(), selected_table1.get(), tree1, "File 1")
         update_column_dropdown(root.file1_path, selected_sheet1.get(), selected_table1.get(), is_file1=True)
 
 def on_table2_selected(*args):
-    """Called when a table is selected for file 2."""
     if hasattr(root, 'file2_path') and root.file2_path:
-        # Only show the selected table's data
         load_table_data(root.file2_path, selected_sheet2.get(), selected_table2.get(), tree2, "File 2")
         update_column_dropdown(root.file2_path, selected_sheet2.get(), selected_table2.get(), is_file1=False)
-
-def select_file1():
-    file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
-    if file_path:
-        root.file1_path = file_path
-        filename = file_path.split('/')[-1]
-        frame1.config(text=filename)
-        # file1_label.config(text=f"Selected: {filename}")
-        # Update sheet dropdown
-        update_sheet_dropdown(file_path, is_file1=True)
-    
-def select_file2():
-    file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
-    if file_path:
-        root.file2_path = file_path
-        filename = file_path.split('/')[-1]
-        frame2.config(text=filename)
-        # file2_label.config(text=f"Selected: {filename}")
-        
-        # Update sheet dropdown
-        update_sheet_dropdown(file_path, is_file1=False)
-
-def highlight_column(tree, column_index):
-    """Highlight only the selected column in the Treeview."""
-    # Reset all cell styles
-    for item in tree.get_children():
-        tree.item(item, tags=())
-    
-    # Create a tag for this specific column
-    tag_name = f"col_{column_index}"
-    
-    # Configure the tag style
-    tree.tag_configure(tag_name, background="light gray")
-    
-    # Apply the tag to each cell in the column
-    for item in tree.get_children():
-        # Get all values for this row
-        values = tree.item(item, "values")
-        if values and len(values) > column_index:
-            # Create a new item with the tag applied only to the selected column
-            tree.item(item, tags=(tag_name,))
 
 def on_column_click(event):
     """Handle column click for File 1."""
     column_id = event.widget.identify_column(event.x)
     
-    if column_id:  # Check if a valid column was clicked
+    if column_id:
         try:
             column_index = int(column_id.strip('#')) - 1
-            if column_index >= 0:  # Ensure valid column index
+            if column_index >= 0:
                 column_name = tree1.heading(column_id)['text']
-                if column_name:  # Ensure column name exists
+                if column_name:
                     selected_col1.set(column_name)
                     status_label.config(text=f"File 1 column selected: {column_name}")
                     
-                    # Add custom rendering for the column cells
                     for col_id in tree1["columns"]:
                         col_idx = tree1["columns"].index(col_id)
                         tree1.tag_configure(f"col_{col_idx}", background="white")
                     
                     tree1.tag_configure(f"col_{column_index}", background="light gray")
                     
-                    # Apply tags to all rows
                     for item_id in tree1.get_children():
                         tree1.item(item_id, tags=(f"col_{column_index}",))
                     
-                    # Apply styling to the individual cells
                     style_column_cells(tree1, column_index)
         except Exception as e:
             print(f"Error in column selection: {e}")
@@ -331,75 +278,82 @@ def on_column_click(event):
 def on_column_click_2(event):
     """Handle column click for File 2."""
     column_id = event.widget.identify_column(event.x)
-    if column_id:  # Check if a valid column was clicked
+    if column_id:
         try:
             column_index = int(column_id.strip('#')) - 1
-            if column_index >= 0:  # Ensure valid column index
+            if column_index >= 0:
                 column_name = tree2.heading(column_id)['text']
-                if column_name:  # Ensure column name exists
+                if column_name:
                     selected_col2.set(column_name)
                     status_label.config(text=f"File 2 column selected: {column_name}")
                     
-                    # Add custom rendering for the column cells
                     for col_id in tree2["columns"]:
                         col_idx = tree2["columns"].index(col_id)
                         tree2.tag_configure(f"col_{col_idx}", background="white")
                     
                     tree2.tag_configure(f"col_{column_index}", background="light gray")
                     
-                    # Apply tags to all rows
                     for item_id in tree2.get_children():
                         tree2.item(item_id, tags=(f"col_{column_index}",))
                     
-                    # Apply styling to the individual cells
                     style_column_cells(tree2, column_index)
         except Exception as e:
             print(f"Error in column selection: {e}")
 
 def style_column_cells(tree, column_index):
     """Style individual cells in the selected column."""
-    # This function will be used for custom styling of individual cells
-    # Since tkinter treeview doesn't support individual cell styling directly,
-    # we use a workaround with item tags and rendering 
-    
-    # First, clear existing column styling
     for i in range(len(tree["columns"])):
         tag_name = f"col_{i}"
         tree.tag_configure(tag_name, background="white")
     
-    # Set the style for the selected column
     tag_name = f"col_{column_index}"
     tree.tag_configure(tag_name, background="light gray")
-    
-    # Create a custom display column that shows the selection
-    def fixed_map(option):
-        # Fix for setting text colour for Tkinter ttk Treeview
-        return [elm for elm in style.map("Treeview", query_opt=option)
-                if elm[:2] != ("!disabled", "!selected")]
     
     style = ttk.Style()
     style.map("Treeview", 
               foreground=fixed_map("foreground"),
               background=fixed_map("background"))
 
+def fixed_map(option):
+    # Fix for setting text colour for Tkinter ttk Treeview
+    return [elm for elm in style.map("Treeview", query_opt=option)
+            if elm[:2] != ("!disabled", "!selected")]
+
+# ---------------------------- File Operations ---------------------------- #
+
+def select_file1():
+    file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
+    if file_path:
+        root.file1_path = file_path
+        filename = file_path.split('/')[-1]
+        frame1.config(text=filename)
+        update_sheet_dropdown(file_path, is_file1=True)
+
+def select_file2():
+    file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
+    if file_path:
+        root.file2_path = file_path
+        filename = file_path.split('/')[-1]
+        frame2.config(text=filename)
+        update_sheet_dropdown(file_path, is_file1=False)
+
+# ---------------------------- Matching Functions ---------------------------- #
+
 def show_progress_ui():
-    global progress_bar, progress_label
+    global progress_label  # Make progress_label global
     progress_window = tk.Toplevel(root)
     progress_window.title("Matching Progress")
     progress_window.geometry("300x150")
     progress_window.transient(root)
     progress_window.grab_set()
     
-    # Center the progress window
     progress_window.geometry("+%d+%d" % (
         root.winfo_rootx() + root.winfo_width()/2 - 150,
         root.winfo_rooty() + root.winfo_height()/2 - 75))
 
-    # Progress label
     progress_label = ttk.Label(progress_window, text="Progress: 0%")
     progress_label.pack(pady=10)
 
-    # Progress bar
     progress_bar = ttk.Progressbar(
         progress_window,
         variable=progress_var,
@@ -411,27 +365,246 @@ def show_progress_ui():
     
     return progress_window
 
-def start_matching():
+def show_advanced_options():
+    """Toggle display of advanced options"""
+    if advanced_options_frame.winfo_ismapped():
+        advanced_options_frame.grid_remove()
+        advanced_toggle_btn.config(text="Show Advanced Options")
+    else:
+        advanced_options_frame.grid()
+        advanced_toggle_btn.config(text="Hide Advanced Options")
+
+def show_stats(stats, result_filename, threshold):
+    """Show statistics in a scrollable dialog"""
+    stats_window = tk.Toplevel(root)
+    stats_window.title("Matching Statistics")
+    stats_window.geometry("500x400")
+    
+    text_area = scrolledtext.ScrolledText(
+        stats_window, 
+        wrap=tk.WORD,
+        width=60,
+        height=20,
+        font=("Consolas", 10)
+    )
+    text_area.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+    
+    message = (
+        f"Matching complete!\n\n"
+        f"Results saved as '{result_filename}'\n\n"
+        f"Statistics:\n"
+        f"- Total compared: {stats['total']}\n"
+        f"- Perfect matches: {stats['perfect_matches']}\n"
+        f"- Above threshold ({threshold}%): {stats['above_threshold']}\n"
+        f"- Near threshold: {stats['near_threshold']}\n"
+        f"- Below threshold: {stats['below_threshold']}\n\n"
+        f"Sheet 1: Matches >= {threshold}%\n"
+        "Sheet 2: All matches\n"
+        "Sheet 3: Detailed statistics"
+    )
+    
+    text_area.insert(tk.INSERT, message)
+    text_area.configure(state='disabled')
+    
+    close_btn = ttk.Button(
+        stats_window,
+        text="Close",
+        command=stats_window.destroy
+    )
+    close_btn.pack(pady=5)
+    
+    stats_window.transient(root)
+    stats_window.grab_set()
+    root.wait_window(stats_window)
+
+def preprocess_value(value, trim_whitespace, normalize_case, ignore_punct):
+    """Preprocess a value based on the selected options"""
+    if pd.isna(value):
+        return ""
+    s = str(value)
+    if trim_whitespace:
+        s = s.strip()
+    if normalize_case:
+        s = s.lower()
+    if ignore_punct:
+        s = re.sub(r'[^\w\s]', '', s)
+    return s
+
+def perform_matching():
+    """Main matching function to run in a separate thread"""
     try:
-        # Show file save dialog first
+        # Get matching options
+        threshold = float(threshold_var.get())
+        case_sensitive = case_sensitive_var.get()
+        ignore_punct = ignore_punct_var.get()
+        trim_whitespace = trim_whitespace_var.get()
+        normalize_case = normalize_case_var.get() and not case_sensitive
+        algorithm = algorithm_var.get()
+        
+        # Load data
+        if selected_table1.get() == "Full Sheet":
+            df1 = pd.read_excel(root.file1_path, selected_sheet1.get())
+        else:
+            df1 = pd.read_excel(root.file1_path, selected_sheet1.get())
+            
+        if selected_table2.get() == "Full Sheet":
+            df2 = pd.read_excel(root.file2_path, selected_sheet2.get())
+        else:
+            df2 = pd.read_excel(root.file2_path, selected_sheet2.get())
+
+        # Validate columns
+        df1.columns = [str(col).strip() for col in df1.columns]
+        df2.columns = [str(col).strip() for col in df2.columns]
+
+        col1 = selected_col1.get().strip()
+        col2 = selected_col2.get().strip()
+
+        if col1 not in df1.columns:
+            col1_match = next((col for col in df1.columns if col.lower() == col1.lower()), None)
+            if col1_match:
+                col1 = col1_match
+            else:
+                raise ValueError(f"Selected column '{selected_col1.get()}' not found in File 1")
+        
+        if col2 not in df2.columns:
+            col2_match = next((col for col in df2.columns if col.lower() == col2.lower()), None)
+            if col2_match:
+                col2 = col2_match
+            else:
+                raise ValueError(f"Selected column '{selected_col2.get()}' not found in File 2")
+
+        # Preprocess all values to match
+        values_to_match = [
+            preprocess_value(v, trim_whitespace, normalize_case, ignore_punct) 
+            for v in df2[col2]
+        ]
+        
+        # Choose scoring algorithm
+        if algorithm == "Jaro-Winkler":
+            scorer = fuzz.WRatio
+        elif algorithm == "Ratio":
+            scorer = fuzz.ratio
+        else:  # Levenshtein
+            scorer = None
+
+        # Prepare results
+        results = []
+        total_rows = len(df1)
+        stats = {
+            'total': 0,
+            'above_threshold': 0,
+            'near_threshold': 0,
+            'below_threshold': 0,
+            'perfect_matches': 0
+        }
+
+        # Process each row
+        for i, row in df1.iterrows():
+            value = preprocess_value(row[col1], trim_whitespace, normalize_case, ignore_punct)
+            
+            if value:
+                if scorer:
+                    matches = process.extract(
+                        value, 
+                        values_to_match, 
+                        scorer=scorer,
+                        limit=1
+                    )
+                else:
+                    matches = process.extract(
+                        value, 
+                        values_to_match, 
+                        limit=1
+                    )
+                
+                if matches:
+                    match_value, match_score, _ = matches[0]
+                    stats['total'] += 1
+                    
+                    if match_score == 100:
+                        stats['perfect_matches'] += 1
+                    if match_score >= threshold:
+                        stats['above_threshold'] += 1
+                    elif match_score >= threshold * 0.8:
+                        stats['near_threshold'] += 1
+                    else:
+                        stats['below_threshold'] += 1
+                        
+                    results.append({
+                        'source_value': row[col1],
+                        'matched_value': match_value,
+                        'score': match_score,
+                        'source_row': i,
+                        'all_columns': row.to_dict()
+                    })
+            
+            # Update progress
+            progress = (i + 1) / total_rows * 100
+            progress_var.set(progress)
+            progress_label.config(
+                text=f"Processing: {i+1}/{total_rows} rows\n"
+                     f"Matches: {stats['above_threshold']} above threshold"
+            )
+            root.update()
+
+        # Generate output
+        all_results_df = pd.DataFrame(results)
+        filtered_df = all_results_df[all_results_df['score'] >= threshold]
+
+        # Save results
+        if result_filename.endswith('.csv'):
+            filtered_df.to_csv(result_filename, index=False)
+            all_results_filename = result_filename.replace('.csv', '_all_results.csv')
+            all_results_df.to_csv(all_results_filename, index=False)
+        else:
+            with pd.ExcelWriter(result_filename) as writer:
+                filtered_df.to_excel(writer, sheet_name="Filtered Results", index=False)
+                all_results_df.to_excel(writer, sheet_name="All Results", index=False)
+                
+                # Add stats sheet
+                stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Count'])
+                stats_df.to_excel(writer, sheet_name="Statistics")
+
+        # Show completion
+        progress_var.set(100)
+        progress_label.config(text="Done!")
+        root.update()
+        time.sleep(0.5)
+        progress_window.destroy()
+        
+        # Show stats in main thread
+        root.after(0, lambda: show_stats(stats, result_filename, threshold))
+        status_label.config(text=f"Matching complete. {stats['above_threshold']} matches found.")
+
+    except Exception as e:
+        progress_window.destroy()
+        messagebox.showerror("Error", f"An error occurred: {e}")
+        status_label.config(text=f"Error: {str(e)}")
+
+def start_matching():
+    """Start the matching process with thread handling"""
+    try:
+        global result_filename, progress_window
+        
+        # Get save filename
         current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         initial_filename = f"fuzzy_match_{current_time}.xlsx"
         result_filename = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
-            filetypes=[("Excel Files", "*.xlsx")],
+            filetypes=[("Excel Files", "*.xlsx"), ("CSV Files", "*.csv")],
             initialfile=initial_filename,
             title="Save Match Results As"
         )
         
-        # If user cancels the save dialog, abort the operation
         if not result_filename:
             return
 
         # Show progress window
         progress_window = show_progress_ui()
         progress_var.set(0)
+        progress_label.config(text="Initializing...")
         root.update()
-
+        
         status_label.config(text="Processing...")
         root.update()
         
@@ -442,166 +615,8 @@ def start_matching():
         if not selected_col1.get() or not selected_col2.get():
             raise ValueError("Please select columns for matching from both files")
 
-        # Load data based on selected tables and sheets
-        if selected_table1.get() == "Full Sheet":
-            df1 = pd.read_excel(root.file1_path, selected_sheet1.get())
-        else:
-            # For now, we read the entire sheet - in a more advanced version,
-            # you could read only the specified table range
-            df1 = pd.read_excel(root.file1_path, selected_sheet1.get())
-            
-        if selected_table2.get() == "Full Sheet":
-            df2 = pd.read_excel(root.file2_path, selected_sheet2.get())
-        else:
-            # For now, we read the entire sheet - in a more advanced version,
-            # you could read only the specified table range
-            df2 = pd.read_excel(root.file2_path, selected_sheet2.get())
-
-        # Debug prints
-        print(f"Selected column for File 1: {selected_col1.get()}")
-        print(f"Selected column for File 2: {selected_col2.get()}")
-        print(f"Columns in File 1: {list(df1.columns)}")
-        print(f"Columns in File 2: {list(df2.columns)}")
-
-        # Convert column names to strings and normalize them for matching
-        df1.columns = [str(col).strip() for col in df1.columns]
-        df2.columns = [str(col).strip() for col in df2.columns]
-
-        col1 = selected_col1.get().strip()
-        col2 = selected_col2.get().strip()
-
-        # First try exact match
-        if col1 not in df1.columns:
-            # Try case-insensitive match
-            col1_match = next((col for col in df1.columns if col.lower() == col1.lower()), None)
-            if col1_match:
-                col1 = col1_match
-            else:
-                raise ValueError(f"Selected column '{selected_col1.get()}' is not valid for File 1")
-        
-        if col2 not in df2.columns:
-            # Try case-insensitive match
-            col2_match = next((col for col in df2.columns if col.lower() == col2.lower()), None)
-            if col2_match:
-                col2 = col2_match
-            else:
-                raise ValueError(f"Selected column '{selected_col2.get()}' is not valid for File 2")
-
-        # Get threshold
-        try:
-            threshold = float(threshold_var.get())
-        except ValueError:
-            threshold = 80.0  # Default if invalid input
-
-        # Load workbooks
-        file1 = op.load_workbook(root.file1_path)
-        sheet1 = file1[selected_sheet1.get()]
-        file2 = op.load_workbook(root.file2_path)
-        sheet2 = file2[selected_sheet2.get()]
-
-        # Get column indices
-        col1_index = df1.columns.get_loc(col1)
-        col2_index = df2.columns.get_loc(col2)
-
-        # Create workbook and sheets
-        result = op.Workbook()
-        filtered_sheet = result.active
-        filtered_sheet.title = "Filtered Results"
-        all_results_sheet = result.create_sheet(title="All Results")
-
-        # Set up headers for both sheets
-        for sheet in [filtered_sheet, all_results_sheet]:
-            sheet['A1'].value = col1
-            sheet['B1'].value = f"Matched {col2}"
-            sheet['C1'].value = "Match Score"
-
-        # Color definitions
-        green_fill = op.styles.PatternFill(start_color='90EE90', end_color='90EE90', fill_type='solid')
-        orange_fill = op.styles.PatternFill(start_color='FFB347', end_color='FFB347', fill_type='solid')
-        red_fill = op.styles.PatternFill(start_color='FF6B6B', end_color='FF6B6B', fill_type='solid')
-
-        # Initialize counters and get values to match
-        row_tracker_filtered = 1
-        row_tracker_all = 1
-        values_to_match = [str(r[col2_index]) for r in sheet2.iter_rows(values_only=True) if r[col2_index]]
-
-        # Get total number of rows for progress calculation
-        total_rows = len(list(sheet1.iter_rows(min_row=2)))
-        processed_rows = 0
-
-        # Process matches
-        for t in sheet1.iter_rows(values_only=True, min_row=2):  # Skip header row
-            processed_rows += 1
-            progress = (processed_rows / total_rows) * 100
-            progress_var.set(progress)
-            progress_label.config(text=f"Progress: {progress:.1f}%")
-            root.update()
-
-            value = t[col1_index]
-            if value:
-                # Convert to string to ensure compatibility
-                str_value = str(value)
-                matches = process.extract(str_value, values_to_match, limit=1)
-                if matches and len(matches) > 0:
-                    # Correctly handle the tuple unpacking - rapidfuzz returns (match, score, index)
-                    match_tuple = matches[0]
-                    # Extract just the first two elements we need
-                    match_value = match_tuple[0]
-                    match_score = match_tuple[1]
-                    
-                    # Add to filtered sheet if meets threshold
-                    if match_score >= threshold:
-                        row_tracker_filtered += 1
-                        filtered_sheet.cell(row=row_tracker_filtered, column=1, value=value)
-                        filtered_sheet.cell(row=row_tracker_filtered, column=2, value=match_value)
-                        filtered_sheet.cell(row=row_tracker_filtered, column=3, value=match_score)
-                    
-                    # Add to all results sheet with color coding
-                    row_tracker_all += 1
-                    cells = [
-                        all_results_sheet.cell(row=row_tracker_all, column=1, value=value),
-                        all_results_sheet.cell(row=row_tracker_all, column=2, value=match_value),
-                        all_results_sheet.cell(row=row_tracker_all, column=3, value=match_score)
-                    ]
-                    
-                    fill = (green_fill if match_score >= threshold 
-                           else orange_fill if match_score >= threshold * 0.8 
-                           else red_fill)
-                    
-                    for cell in cells:
-                        cell.fill = fill
-
-        # Auto-adjust column widths
-        for sheet in [filtered_sheet, all_results_sheet]:
-            for col in sheet.columns:
-                max_length = max(len(str(cell.value or "")) for cell in col)
-                sheet.column_dimensions[col[0].column_letter].width = max_length + 2
-
-        # Try to save the file
-        try:
-            result.save(result_filename)
-            messagebox.showinfo("Success", 
-                f"Matching complete!\nResults saved as '{result_filename}'\n" +
-                f"Sheet 1: Matches >= {threshold}%\n" +
-                "Sheet 2: All matches with color coding:\n" +
-                "  Green: Meets threshold\n" +
-                "  Orange: Near threshold\n" +
-                "  Red: Below threshold")
-            status_label.config(text=f"Matching complete. Results saved as '{result_filename}'")
-        except PermissionError:
-            messagebox.showerror("Error", 
-                f"Could not save the file. The file '{result_filename}' may be in use or you don't have permission to write to this location.")
-            status_label.config(text="Error: Could not save file (permission denied)")
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not save the file: {e}")
-            status_label.config(text=f"Error: {str(e)}")
-
-        # Show completion message and destroy progress window
-        progress_var.set(100)
-        progress_label.config(text="Progress: 100%")
-        root.update()
-        time.sleep(0.5)  # Short delay to show 100%
-        progress_window.destroy()
+        # Start the matching thread
+        threading.Thread(target=perform_matching, daemon=True).start()
 
     except Exception as e:
         if 'progress_window' in locals():
@@ -609,74 +624,63 @@ def start_matching():
         messagebox.showerror("Error", f"An error occurred: {e}")
         status_label.config(text=f"Error: {str(e)}")
 
-
-# Set DPI awareness for better display on Windows
-try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(1) 
-except:
-    pass
+# ---------------------------- Main UI Setup ---------------------------- #
 
 # Create main window
 root = tk.Tk()
-root.title("Excel Fuzzy Matching")
-root.geometry("1400x800")  # Wider window to accommodate three panels
+root.title("Excel Fuzzy Matching Tool")
+root.geometry("1400x800")
 
 # Apply style
 style = ttk.Style()
 style.theme_use("vista")
 style.configure("Treeview.Heading", foreground="#7b6cd9", font=('Helvetica', 10, 'bold'))
 
-# Create main horizontal frame to hold the three sections
+# Create main horizontal frame
 main_horizontal_frame = ttk.Frame(root)
 main_horizontal_frame.pack(fill="both", expand=True)
 
-# Create sheet selection frame on the left
+# ---------------------------- Left Panel (File Selection) ---------------------------- #
+
 sheet_frame = ttk.LabelFrame(main_horizontal_frame, text="File Selection", width=250)
 sheet_frame.pack(side="left", fill="y", padx=5, pady=5)
-sheet_frame.pack_propagate(False)  # Prevent the frame from shrinking
+sheet_frame.pack_propagate(False)
 
-# Create files frame in the center (for tree views)
+# File 1 button
+file1_btn = round_button(sheet_frame, text="Choose file 1", fill="#7b6cd9", radius=25, 
+                        command=select_file1, font=('Poppins', 9, 'bold'))
+file1_btn.grid(row=1, column=0, pady=5, padx=5, sticky="ew")
+
+# Separator
+ttk.Separator(sheet_frame, orient='horizontal').grid(row=2, column=0, sticky='ew', pady=10)
+
+# File 2 button
+file2_btn = round_button(sheet_frame, text="Choose file 2", fill="#7b6cd9", radius=25, 
+                        command=select_file2, font=('Poppins', 9, 'bold'))
+file2_btn.grid(row=4, column=0, pady=5, padx=5, sticky="ew")
+
+# ---------------------------- Center Panel (Data Display) ---------------------------- #
+
 files_frame = ttk.LabelFrame(main_horizontal_frame, text="Excel Data")
 files_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
 
-# Create controls frame on the right
-control_frame = ttk.LabelFrame(main_horizontal_frame, text="Hierarchical Selection", width=300)
-control_frame.pack(side="right", fill="y", padx=5, pady=5)
-control_frame.pack_propagate(False)  # Prevent the frame from shrinking
-
-# Set up the files frame with scrolling
+# Canvas and scrollbars for files frame
 files_canvas = tk.Canvas(files_frame)
 files_scrollbar_y = ttk.Scrollbar(files_frame, orient="vertical", command=files_canvas.yview)
 files_scrollbar_x = ttk.Scrollbar(files_frame, orient="horizontal", command=files_canvas.xview)
 files_scroll_frame = ttk.Frame(files_canvas)
 
-files_scroll_frame.bind(
-    "<Configure>",
-    lambda e: files_canvas.configure(
-        scrollregion=files_canvas.bbox("all")
-    )
-)
-
-# Create a window inside the canvas
+files_scroll_frame.bind("<Configure>", lambda e: files_canvas.configure(scrollregion=files_canvas.bbox("all")))
 files_canvas.create_window((0, 0), window=files_scroll_frame, anchor="nw")
-files_canvas.configure(
-    yscrollcommand=files_scrollbar_y.set,
-    xscrollcommand=files_scrollbar_x.set
-)
+files_canvas.configure(yscrollcommand=files_scrollbar_y.set, xscrollcommand=files_scrollbar_x.set)
 
 files_scrollbar_y.pack(side="right", fill="y")
 files_scrollbar_x.pack(side="bottom", fill="x")
 files_canvas.pack(side="left", fill="both", expand=True)
 
-# Configure scrolling functions
+# Mouse wheel bindings
 def _on_mousewheel(event):
     files_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-
-def change_to_hand(event):
-    event.widget.config(cursor="hand2")
-
-def change_to_pointer(event):
-    event.widget.config(cursor="")
 
 def _on_shift_mousewheel(event):
     files_canvas.xview_scroll(int(-1*(event.delta/120)), "units")
@@ -684,7 +688,7 @@ def _on_shift_mousewheel(event):
 files_canvas.bind_all("<MouseWheel>", _on_mousewheel)
 files_canvas.bind_all("<Shift-MouseWheel>", _on_shift_mousewheel)
 
-# Add keyboard binding for better scrolling
+# Keyboard bindings
 root.bind('<Up>', lambda event: files_canvas.yview_scroll(-1, "units"))
 root.bind('<Down>', lambda event: files_canvas.yview_scroll(1, "units"))
 root.bind('<Left>', lambda event: files_canvas.xview_scroll(-1, "units"))
@@ -692,48 +696,17 @@ root.bind('<Right>', lambda event: files_canvas.xview_scroll(1, "units"))
 root.bind('<Prior>', lambda event: files_canvas.yview_scroll(-1, "pages"))
 root.bind('<Next>', lambda event: files_canvas.yview_scroll(1, "pages"))
 
-# CONFIGURE LEFT PANEL (FILE SELECTION) ------------------------------
-sheet_frame.grid_columnconfigure(0, weight=1)
-
-# File 1 selection label
-# file1_label = tk.Label(sheet_frame, text="Selected: ", bg="light gray", relief="sunken", height=2)
-# file1_label.grid(row=0, column=0, pady=5, padx=5, sticky="ew")
-
-# Choose File 1 button
-# file1_btn = tk.Button(sheet_frame, text="Choose File 1", command=select_file1, height=2)
-file1_btn = round_button(sheet_frame, text="Choose file 1",fill="#7b6cd9", radius=25, command=select_file1, font=('Poppins', 9, 'bold'))
-file1_btn.bind("<Enter>", change_to_hand)
-file1_btn.grid(row=1, column=0, pady=5, padx=5, sticky="ew")
-
-# Add a separator
-ttk.Separator(sheet_frame, orient='horizontal').grid(row=2, column=0, sticky='ew', pady=10)
-
-# File 2 selection label
-# File 2 selection label
-# file2_label = tk.Label(sheet_frame, text="Selected: ", bg="light gray", relief="sunken", height=2)
-# file2_label.grid(row=3, column=0, pady=5, padx=5, sticky="ew")
-
-# Choose File 2 button
-# file2_btn = tk.Button(sheet_frame, text="Choose File 2", command=select_file2, height=2)
-file2_btn = round_button(sheet_frame, text="Choose file 2",fill="#7b6cd9", radius=25, command=select_file2, font=('Poppins', 9, 'bold'))
-file2_btn.bind("<Enter>", change_to_hand)
-file2_btn.grid(row=4, column=0, pady=5, padx=5, sticky="ew")
-
-# CONFIGURE CENTER PANEL (TREEVIEWS) ----------------------------------
-
-# First tree with scrollbars
-frame1 = tk.LabelFrame(files_scroll_frame, text="First Excel File", background="#7b6cd9", foreground="white", font=("Poppins", 8, "bold"), width=700)
+# File 1 treeview
+frame1 = tk.LabelFrame(files_scroll_frame, text="First Excel File", background="#7b6cd9", 
+                      foreground="white", font=("Poppins", 8, "bold"), width=700)
 frame1.pack(padx=5, pady=5, fill="both", expand=True)
 
-# Create scrollbar frame1
 tree1_frame = ttk.Frame(frame1, width=1000)
 tree1_frame.pack(fill="both", expand=True)
 
-# Create vertical scrollbar
 tree1_scroll_y = ttk.Scrollbar(tree1_frame)
 tree1_scroll_y.pack(side="right", fill="y")
 
-# Create horizontal scrollbar
 tree1_scroll_x = ttk.Scrollbar(tree1_frame, orient="horizontal")
 tree1_scroll_x.pack(side="bottom", fill="x")
 
@@ -745,20 +718,17 @@ tree1["show"] = "headings"
 tree1_scroll_y.config(command=tree1.yview)
 tree1_scroll_x.config(command=tree1.xview)
 
-
-# Second tree with scrollbars
-frame2 = tk.LabelFrame(files_scroll_frame, text="Second Excel File", background="#7b6cd9", foreground="white", font=("Poppins", 8, "bold"))
+# File 2 treeview
+frame2 = tk.LabelFrame(files_scroll_frame, text="Second Excel File", background="#7b6cd9", 
+                      foreground="white", font=("Poppins", 8, "bold"))
 frame2.pack(padx=5, pady=5, fill="both", expand=True)
 
-# Create scrollbar frame2
 tree2_frame = ttk.Frame(frame2)
 tree2_frame.pack(fill="both", expand=True)
 
-# Create vertical scrollbar
 tree2_scroll_y = ttk.Scrollbar(tree2_frame)
 tree2_scroll_y.pack(side="right", fill="y")
 
-# Create horizontal scrollbar
 tree2_scroll_x = ttk.Scrollbar(tree2_frame, orient="horizontal")
 tree2_scroll_x.pack(side="bottom", fill="x")
 
@@ -770,74 +740,76 @@ tree2["show"] = "headings"
 tree2_scroll_y.config(command=tree2.yview)
 tree2_scroll_x.config(command=tree2.xview)
 
-# CONFIGURE RIGHT PANEL (HIERARCHICAL SELECTION) ----------------------------------
-control_frame.grid_columnconfigure(0, weight=1)
-control_frame.grid_columnconfigure(1, weight=2)
+# ---------------------------- Right Panel (Controls) ---------------------------- #
 
-# Create File 1 hierarchical section with an inset frame
+control_frame = ttk.LabelFrame(main_horizontal_frame, text="Hierarchical Selection", width=300)
+control_frame.pack(side="right", fill="y", padx=5, pady=5)
+control_frame.pack_propagate(False)
+
+# File 1 hierarchy
 file1_hierarchy_frame = ttk.LabelFrame(control_frame, text="File 1 Hierarchy")
 file1_hierarchy_frame.grid(row=0, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
 
-# Sheet selection for File 1
+# Sheet selection
 sheet1_label = ttk.Label(file1_hierarchy_frame, text="-- Sheet:")
 sheet1_label.grid(row=0, column=0, sticky="w", pady=5, padx=5)
 selected_sheet1 = StringVar(root)
-selected_sheet1.set("Sheet1")  # Default value
+selected_sheet1.set("Sheet1")
 sheet1_dropdown = ttk.OptionMenu(file1_hierarchy_frame, selected_sheet1, "Sheet1")
 sheet1_dropdown.grid(row=0, column=1, pady=5, padx=5, sticky="ew")
-selected_sheet1.trace('w', on_sheet1_selected)  # Call function when selection changes
+selected_sheet1.trace('w', on_sheet1_selected)
 
-# Table selection for File 1
+# Table selection
 table1_label = ttk.Label(file1_hierarchy_frame, text="    |-- Tables:")
 table1_label.grid(row=1, column=0, sticky="w", pady=5, padx=5)
 selected_table1 = StringVar(root)
-selected_table1.set("Full Sheet")  # Default value
+selected_table1.set("Full Sheet")
 table1_dropdown = ttk.OptionMenu(file1_hierarchy_frame, selected_table1, "Full Sheet")
 table1_dropdown.grid(row=1, column=1, pady=5, padx=5, sticky="ew")
-selected_table1.trace('w', on_table1_selected)  # Call function when selection changes
+selected_table1.trace('w', on_table1_selected)
 
-# Column selection for File 1
+# Column selection
 column1_label = ttk.Label(file1_hierarchy_frame, text="        |-- Columns:")
 column1_label.grid(row=2, column=0, sticky="w", pady=5, padx=5)
 selected_col1 = StringVar(root)
-selected_col1.set("Select column")  # Default value
+selected_col1.set("Select column")
 column1_dropdown = ttk.OptionMenu(file1_hierarchy_frame, selected_col1, "Select column")
 column1_dropdown.grid(row=2, column=1, pady=5, padx=5, sticky="ew")
 
-# Add a separator
+# Separator
 ttk.Separator(control_frame, orient='horizontal').grid(row=1, column=0, columnspan=2, sticky='ew', pady=10)
 
-# Create File 2 hierarchical section with an inset frame
+# File 2 hierarchy
 file2_hierarchy_frame = ttk.LabelFrame(control_frame, text="File 2 Hierarchy")
 file2_hierarchy_frame.grid(row=2, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
 
-# Sheet selection for File 2
+# Sheet selection
 sheet2_label = ttk.Label(file2_hierarchy_frame, text="-- Sheet:")
 sheet2_label.grid(row=0, column=0, sticky="w", pady=5, padx=5)
 selected_sheet2 = StringVar(root)
-selected_sheet2.set("Sheet1")  # Default value
+selected_sheet2.set("Sheet1")
 sheet2_dropdown = ttk.OptionMenu(file2_hierarchy_frame, selected_sheet2, "Sheet1")
 sheet2_dropdown.grid(row=0, column=1, pady=5, padx=5, sticky="ew")
-selected_sheet2.trace('w', on_sheet2_selected)  # Call function when selection changes
+selected_sheet2.trace('w', on_sheet2_selected)
 
-# Table selection for File 2
+# Table selection
 table2_label = ttk.Label(file2_hierarchy_frame, text="    |-- Tables:")
 table2_label.grid(row=1, column=0, sticky="w", pady=5, padx=5)
 selected_table2 = StringVar(root)
-selected_table2.set("Full Sheet")  # Default value
+selected_table2.set("Full Sheet")
 table2_dropdown = ttk.OptionMenu(file2_hierarchy_frame, selected_table2, "Full Sheet")
 table2_dropdown.grid(row=1, column=1, pady=5, padx=5, sticky="ew")
-selected_table2.trace('w', on_table2_selected)  # Call function when selection changes
+selected_table2.trace('w', on_table2_selected)
 
-# Column selection for File 2
+# Column selection
 column2_label = ttk.Label(file2_hierarchy_frame, text="        |-- Columns:")
 column2_label.grid(row=2, column=0, sticky="w", pady=5, padx=5)
 selected_col2 = StringVar(root)
-selected_col2.set("Select column")  # Default value
+selected_col2.set("Select column")
 column2_dropdown = ttk.OptionMenu(file2_hierarchy_frame, selected_col2, "Select column")
 column2_dropdown.grid(row=2, column=1, pady=5, padx=5, sticky="ew")
 
-# Add a separator
+# Separator
 ttk.Separator(control_frame, orient='horizontal').grid(row=3, column=0, columnspan=2, sticky='ew', pady=10)
 
 # Match settings
@@ -847,7 +819,7 @@ threshold_frame.grid(row=4, column=0, columnspan=2, pady=10, padx=5, sticky="ew"
 threshold_label = ttk.Label(threshold_frame, text="Minimum Match %:")
 threshold_label.pack(side="left", padx=5)
 
-threshold_var = tk.StringVar(value="80")  # Default 80%
+threshold_var = tk.StringVar(value="80")
 threshold_spinbox = ttk.Spinbox(
     threshold_frame,
     from_=0,
@@ -857,19 +829,75 @@ threshold_spinbox = ttk.Spinbox(
 )
 threshold_spinbox.pack(side="right", padx=5, pady=5)
 
-# Match button
-match_btn = round_button(control_frame, radius=25, fill="#7b6cd9", font=("Poppins", 9, "bold"), width=170, text="Start matching", command=start_matching)
-match_btn.bind("<Enter>", change_to_hand)
-match_btn.grid(row=5, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
+# Advanced options frame
+advanced_options_frame = ttk.LabelFrame(control_frame, text="Advanced Matching Options")
+advanced_options_frame.grid(row=5, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
 
-# Add a status label
+# Algorithm selection
+ttk.Label(advanced_options_frame, text="Algorithm:").grid(row=0, column=0, sticky="w", padx=5)
+algorithm_var = tk.StringVar(value="Levenshtein")
+algorithm_menu = ttk.OptionMenu(
+    advanced_options_frame, 
+    algorithm_var, 
+    "Levenshtein", 
+    "Levenshtein", 
+   "Jaro-Winkler",  
+"Ratio"  
+)  
+algorithm_menu.grid(row=0, column=1, sticky="ew", padx=5)
+
+ttk.Label(advanced_options_frame, text="Data Preprocessing:").grid(row=1, column=0, sticky="w", padx=5)
+
+trim_whitespace_var = tk.BooleanVar(value=True)
+trim_whitespace_cb = ttk.Checkbutton(
+advanced_options_frame,
+text="Trim whitespace",
+variable=trim_whitespace_var
+)
+
+trim_whitespace_cb.grid(row=2, column=0, columnspan=2, sticky="w", padx=5)
+
+normalize_case_var = tk.BooleanVar(value=True)
+normalize_case_cb = ttk.Checkbutton(
+advanced_options_frame,
+text="Normalize case",
+variable=normalize_case_var
+)
+normalize_case_cb.grid(row=3, column=0, columnspan=2, sticky="w", padx=5)
+
+ignore_punct_var = tk.BooleanVar(value=True)
+ignore_punct_cb = ttk.Checkbutton(
+advanced_options_frame,
+text="Ignore punctuation",
+variable=ignore_punct_var
+)
+ignore_punct_cb.grid(row=4, column=0, columnspan=2, sticky="w", padx=5)
+
+case_sensitive_var = tk.BooleanVar(value=False)
+case_sensitive_cb = ttk.Checkbutton(
+advanced_options_frame,
+text="Case sensitive",
+variable=case_sensitive_var
+)
+case_sensitive_cb.grid(row=5, column=0, columnspan=2, sticky="w", padx=5)
+
+
+advanced_toggle_btn = ttk.Button(
+control_frame,
+text="Show Advanced Options",
+command=show_advanced_options
+)
+advanced_toggle_btn.grid(row=6, column=0, columnspan=2, pady=5)
+
+match_btn = round_button(control_frame, radius=25, fill="#7b6cd9", font=("Poppins", 9, "bold"),
+width=170, text="Start matching", command=start_matching)
+match_btn.grid(row=7, column=0, columnspan=2, pady=20, padx=10, sticky="nsew")
+
 status_label = tk.Label(control_frame, text="Ready", bd=1, relief="sunken", anchor="w")
-status_label.grid(row=6, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
+status_label.grid(row=8, column=0, columnspan=2, pady=5, padx=5, sticky="ew")
 
-# Add these variables after creating the root window
 progress_var = tk.DoubleVar()
-progress_label = None
-progress_bar = None
+result_filename = ""
+progress_window = None
 
-# Start the application
 root.mainloop()
