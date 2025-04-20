@@ -413,6 +413,20 @@ def show_progress_ui():
 
 def start_matching():
     try:
+        # Show file save dialog first
+        current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        initial_filename = f"fuzzy_match_{current_time}.xlsx"
+        result_filename = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel Files", "*.xlsx")],
+            initialfile=initial_filename,
+            title="Save Match Results As"
+        )
+        
+        # If user cancels the save dialog, abort the operation
+        if not result_filename:
+            return
+
         # Show progress window
         progress_window = show_progress_ui()
         progress_var.set(0)
@@ -473,11 +487,6 @@ def start_matching():
             else:
                 raise ValueError(f"Selected column '{selected_col2.get()}' is not valid for File 2")
 
-        # Get filename from user
-        custom_filename = simpledialog.askstring("Input", "Enter the name for the result file:")
-        if not custom_filename:
-            raise ValueError("Filename cannot be empty")
-            
         # Get threshold
         try:
             threshold = float(threshold_var.get())
@@ -568,10 +577,6 @@ def start_matching():
                 max_length = max(len(str(cell.value or "")) for cell in col)
                 sheet.column_dimensions[col[0].column_letter].width = max_length + 2
 
-        # Create timestamp for filename
-        current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        result_filename = f"{custom_filename}_{current_time}.xlsx"
-        
         # Try to save the file
         try:
             result.save(result_filename)
